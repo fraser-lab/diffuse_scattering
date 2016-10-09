@@ -23,13 +23,23 @@ from dials.algorithms.indexing.real_space_grid_search \
      import indexer_real_space_grid_search as indexer
 
 ### Import user-defined parameters
-from diffuse_params import *
+from sematura_params import *
 
 
 
 class diffuse(object):
 
     def __init__(self, filenumber):
+
+        ### Define directories
+        global work_dir, lunus_dir
+
+        lunus_dir = subprocess.check_output(['which', 'symlt'])
+        lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
+        work_dir = subprocess.check_output("pwd")
+        work_dir = work_dir.replace("\n","")
+
+        ### Make subdirectories to organize output
         if (os.path.isdir(work_dir+"/proc")) == True:
             pass
         else:
@@ -43,17 +53,18 @@ class diffuse(object):
         else:
             subprocess.call(['mkdir', work_dir+"/lattices"])
 
-        self.name   = (work_dir+"/"+image_prefix+filenumber+".img")
+        ### Define filenames
+        self.name   = (image_dir+"/"+image_prefix+filenumber+".img")
         self.lunus  = (work_dir+"/proc/"+lunus_image_prefix
                        +filenumber+".img")
         self.radial = (work_dir+"/radial_averages/"+lunus_image_prefix
                        +filenumber+".asc")
-        self.raw    = (raw_image_dir+"/"+image_prefix+filenumber+".cbf")
+        self.raw    = (image_dir+"/"+image_prefix+filenumber+".cbf")
         self.latt   = (work_dir+"/lattices/"+diffuse_lattice_prefix
                        +"_diffuse_"+filenumber+".vtk")
         self.counts = (work_dir+"/lattices/"+diffuse_lattice_prefix
                        +"_counts_"+filenumber+".vtk")
-        # self.ref = raw_image_dir+"/"+image_prefix+filenumber+".img"
+        #self.stat   = (work_dir+"/xx.rf")
 
     ### This function converts the raw data to the img format
     def cbf2img(self, filenumber):
@@ -73,6 +84,14 @@ class diffuse(object):
 
     ### This function uses Dials methods from Phenix to index the data
     def indexing(self):
+
+        raw_file_list = glob.glob(image_dir+"/"+image_prefix+"*.cbf")
+        indexing_data_file_one = raw_file_list[int(indexing_one)-1]
+        indexing_data_file_one = indexing_data_file_one.replace(".cbf",".img")
+        indexing_data_file_two = raw_file_list[int(indexing_two)-1]
+        indexing_data_file_two = indexing_data_file_two.replace(".cbf",".img")
+        indexing_data_file_three = raw_file_list[int(indexing_three)-1]
+        indexing_data_file_three = indexing_data_file_three.replace(".cbf",".img")
 
         print target_cell,target_sg
 
@@ -133,6 +152,9 @@ class diffuse(object):
         global crystal_params
 
         crystal_params = experiments.crystals()[0]
+        # f = open("crystal_matrices.txt", "w")
+        # f.write("{}".format(experiments.crystals()[0]))
+        # f.close()
         return
         
         ### don't keep...just to figure out how to extract variables
@@ -203,19 +225,21 @@ class diffuse(object):
     def make_radial_ref(self):
 
         print 'Making reference statistic'
+
         ref_one = open(self.radial, 'r')
         ref_one_lines = ref_one.readlines()
         ref_one.close()
-        # scale_inner_radius = scale_inner_radius - 1
-        # this includes inner radius value
+        # scale_inner_radius = scale_inner_radius - 1 #this includes inner radius value
         ref_two = ref_one_lines[scale_inner_radius:scale_outer_radius]
         out_file = open('ref.asc', 'w')
         for line in ref_two:
             out_file.write(line)
         out_file.close()
-        ### alternative is to keep the code below, make all input one string
-        ### and set shell=True
+
+
+        ### alternative is to keep this line, make all input one string, and set shell=True
         # subprocess.call(['binasc', '3', '<', 'ref.asc', '>', 'reference.rf'])
+
         infile,outfile = 'ref.asc', 'reference.rf'
         with open(outfile,'w') as ouf:
             with open(infile,'r') as inf:
@@ -224,6 +248,12 @@ class diffuse(object):
                 proc.wait()
 
         subprocess.call(['mulrf', 'reference.rf', 'reference.rf', 'xx.rf'])
+
+
+        # subprocess.call(['mv', 'reference.rf', '../'])
+        # subprocess.call(['mv', 'xx.rf', '../'])
+        # os.chdir(work_dir)
+
         return
 
         # xx = subprocess.call(['avgrf', 'xx.rf'])
@@ -263,7 +293,7 @@ class diffuse(object):
 
         subprocess.call(['mulrf', 'reference.rf', filenumber+'.rf',
                          filenumber+'_xy.rf'])
-        subprocess.call(['mulrf', filenum+'.rf', filenumber+'.rf',
+        subprocess.call(['mulrf', filenumber+'.rf', filenumber+'.rf',
                          filenumber+'_yy.rf'])
         xx = float(subprocess.check_output(['avgrf', 'xx.rf']))
         xy = float(subprocess.check_output(['avgrf', filenumber+'_xy.rf']))
@@ -357,6 +387,7 @@ class diffuse(object):
 
         # make an array of indices to map data onto the diffuse lattice
         index = k*latxdim*latydim + j*latxdim + i
+        index[index>len(lat[0])]=0
         index = np.asanyarray(index, dtype=int)
 
         # create a mask to eliminate any data point outside 1 unit cell (h)
@@ -384,10 +415,12 @@ class diffuse(object):
 
         # map the data onto the diffuse lattice using the indices created above
         np.add.at(lat[0], index, val)
+        lat[0][0]=0
         # keep track of the number of data points
         # added at each lattice point (for averaging)
         val[val!=0]=1
         np.add.at(lat[1], index, val)
+        lat[0][0]=0
 
         return lat
 
@@ -453,6 +486,7 @@ class diffuse(object):
         print "transform to laboratory axis reciprocal space coordinates"
 
         print "transform to fractional miller indices and populate diffuse lattice"
+
 
         crystal = copy.deepcopy(crystal_params)
         axis = gonio.get_rotation_axis()
@@ -567,11 +601,18 @@ class diffuse(object):
 
         # # initialize lattice before summing
         # latnumber = '{:05.0f}'.format(i)
-        lattice1   = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                      +"_diffuse_"+filenum+".vtk")
+        # lattice1   = (work_dir+"/lattices/"+diffuse_lattice_prefix
+                      # +"_diffuse_"+reference_image_number+".vtk")
+        # lattice_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"*.vtk")
+        diffuse_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_diffuse_*.vtk")
+        counts_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_counts_*.vtk")
+
+        mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.lat")
+        mean_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.vtk")
+
         
 
-        subprocess.call(['vtk2lat', lattice1, 'temp.lat'])
+        subprocess.call(['vtk2lat', diffuse_file_list[0], 'temp.lat'])
         subprocess.call(['constlt', 'temp.lat', 'temp_diffuse_sum.lat', '0.0'])
         subprocess.call(['constlt', 'temp.lat', 'temp_counts_sum.lat', '0.0'])
 
@@ -607,6 +648,11 @@ class diffuse(object):
 
     def symmetrize(self):
 
+        mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.lat")
+        sym_lat_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
+                              +"_mean_sym.lat")
+        sym_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
+                              +"_mean_sym.vtk")
         sg_conv = open(lunus_dir+"/analysis/sg_pg_lunus.csv","r")
         sg_conv_lines = sg_conv.readlines()
 
@@ -624,8 +670,8 @@ class diffuse(object):
                 lunus_key += item[4]
                 laue_class += item[3]
         
-        print lunus_key
-        print laue_class
+        # print lunus_key
+        # print laue_class
         # sg_conv = pd.read_csv(work_dir+"/analysis/sg_pg_lunus.csv", low_memory=False)
         # lunus_key = sg_conv['lunus_number'][target_sg]
 
@@ -636,121 +682,25 @@ class diffuse(object):
         return
 
 
-###----------------Begin Variable Definitions-------------------###
+# ###----------------Direct call of script-------------------###
 
-lunus_dir = subprocess.check_output(['which', 'symlt'])
-lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
-work_dir = subprocess.check_output("pwd")
-work_dir = work_dir.replace("\n","")
+def main():
+    script, filenum = argv
+    filenum = float(filenum)
+    filenum = '{:05.0f}'.format(filenum)
 
-### variables to be plugged in via command line
-script, filenum = argv
-filenum = float(filenum)
-filenum = '{:05.0f}'.format(filenum)
+    data = diffuse(filenum)
+    data.cbf2img(filenum)
+    data.debragg(filenum)
+    data.radial_avg(filenum)
+    data.scale_image(filenum)
+    data.indexing()
+    data.integrator()
+    data.latout()
+    data.ctout()
 
-### match number formatting for reference image
-reference_image_number = float(reference_image_number)
-reference_image_number = '{:05.0f}'.format(reference_image_number)
-
-raw_file_list = glob.glob(raw_image_dir+"/"+image_prefix+"*.cbf")
-lunus_files = glob.iglob(work_dir+"/proc/"+lunus_image_prefix+"*.img")
-radial_files = glob.iglob(work_dir+"/radial_averages/"+lunus_image_prefix
-                          +"*.asc")
-
-
-
-
-
-###-----------------End Variable Definitions--------------------###
-
-
-###---------Runs fxns within Diffuse class...all work------------###
-
-data = diffuse(filenum)
-reference = diffuse(reference_image_number)
-data.cbf2img(filenum)
-# make lunus processed image for file of interest
-data.debragg(filenum)
-
-# # make reference image for scaling
-### generate list of files (don't use)
-
-# files = subprocess.check_call['ls', './*.sh']
-# files = subprocess.check_output('ls /Users/student/Desktop/vanben_diffuse_analysis/*.sh', shell=True)
-# print files
-
-### generate list of files (use)
-
-
-
-# for item in files:
-#     print item # ['file1.bc', 'file2.bc']
-
-
-if reference.lunus in lunus_files:
-    pass
-else:
-    reference.cbf2img(reference_image_number)
-    reference.debragg(reference_image_number)
-
-
-
-
-data.radial_avg(filenum)
-
-# make reference image for scaling
-if reference.radial in radial_files:
-    pass
-else:
-    reference.radial_avg(reference_image_number)
-
-reference.make_radial_ref()
-data.scale_image(filenum)
-data.indexing()
-data.integrator()
-data.latout()
-data.ctout()
-
-lattice_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix
-                              +"*.vtk")
-diffuse_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix
-                              +"_diffuse_*.vtk")
-counts_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix
-                              +"_counts_*.vtk")
-
-mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                       +"_mean.lat")
-mean_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                       +"_mean.vtk")
-sym_lat_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                      +"_mean_sym.lat")
-sym_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                      +"_mean_sym.vtk")
-
-# calculate mean lattice only once all images are processed
-if (len(diffuse_file_list)+len(counts_file_list)) < (2*len(raw_file_list)):
-    pass
-elif (len(diffuse_file_list)+len(counts_file_list)) == (2*len(raw_file_list)):
-    data.mean_lattice()
-else:
-    print "Mean lattice already exists"
-
-
-
-# calculate symmetrized lattice only if mean lattice exists
-if mean_lattice_file in lattice_file_list:
-    # data.sg_pg_lunus()
-    data.symmetrize()
-else:
-    pass
-###---------End of run within Diffuse class...all work------------###
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    main()
 
 
 

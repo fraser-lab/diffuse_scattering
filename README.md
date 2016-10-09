@@ -1,13 +1,25 @@
 # Diffuse_Scattering
 
-This script takes raw diffraction images as input and returns 3D-reciprocal space maps of the diffuse X-ray scattering present in the images. The script relies on Lunus (https://github.com/mewall/lunus/tree/master), as well as DIALS methods within Phenix (https://www.phenix-online.org/download/nightly_builds.cgi).
+This package takes raw diffraction images as input and returns 3D-reciprocal space maps of the diffuse X-ray scattering present in the images. The script relies on Lunus (https://github.com/mewall/lunus/tree/master), as well as DIALS methods within Phenix (https://www.phenix-online.org/download/nightly_builds.cgi).
 
-## Contents
+## Quick Summary
+
+### Contents
 
 ```
-sematura.py                 wrapper for Lunus & DIALS software for processing diffraction images
-sematura_params.py          input parameters for diffuse data processing
+sematura_launcher.py        #script to run functions from library, can launch jobs on SGE
+sematura.py                 #library of functions for processing diffraction images
+sematura_params.py          #input parameters for diffuse data processing
 ```
+
+### Usage
+
+```
+libtbx.python sematura_launcher.py -i -p -a
+```
+
+## Detailed Instructions
+
 
 ### Prerequisities
 
@@ -20,16 +32,16 @@ You need to have Phenix installed and properly sourced.
 * Untar and install Phenix
 
 ```
-$ cd ../Downloads
+$ cd /path_to/Downloads
 
 $ tar -xzvf phenix-installer-version
 
 $ cd phenix-installer-version
 
-$ ./install --prefix=<directory> (replace "directory" with location you would like Phenix to be installed in)
+$ ./install --prefix=<directory>  #(prefix allows you to install in another location eg: /usr/local/)
 ```
 
-* Source phenix
+* Source Phenix
 
 ```
 $ vim ~/.bash_profile
@@ -52,7 +64,7 @@ $ git clone -b master https://github.com/mewall/lunus.git
 * Move Lunus, if desired
 
 ```
-$ mv ../path_to/Downloads/lunus ../new_path_to/lunus
+$ mv /path_to/Downloads/lunus /new_path_to/lunus
 ```
 
 * Note for Mac Users
@@ -62,7 +74,7 @@ Make sure you have gcc installed, currently in OS X the gcc command actually run
 * Compile Lunus
 
 ```
-$ cd ../path_to/lunus/c/src
+$ cd /path_to/lunus/c/src
 
 $ pwd
 
@@ -70,7 +82,7 @@ $ cat 00README
 
 $ csh
 
-% setenv C_HOME path_to/lunus/c
+% setenv C_HOME /path_to/lunus/c
 
 % makemake Makefile
 ```
@@ -92,16 +104,14 @@ To run sematura.py you may need to make the following change to Phenix:
 Open the following script in the text editor of your choice:
 
 ```
-/path_to/phenix_version/modules/cctbx_project/iotbx/detectors/detectorbase.py
+/path_to/phenix-version/modules/cctbx_project/iotbx/detectors/detectorbase.py
 ```
-* add “+” lines and comment out “-“ lines
+* add “+” line and comment out “-“ lines
 
 ```
-detectorbase.py
+detectorbase.py @ lines 203-210
 ===================================================================
---- detectorbase.py (revision 18023)
-+++ detectorbase.py (working copy)
-@@ -203,9 +203,7 @@
+
     F.close()
     from iotbx.detectors import WriteADSC
     if mod_data==None: mod_data=self.linearintdata
@@ -111,4 +121,17 @@ detectorbase.py
 +    mod_data = mod_data.set_selected(mod_data < 0, 0)
     WriteADSC(fileout,mod_data,self.size1,self.size2,endian)
 ```
+
+### Note
+
+The script and the params file must be in the same directory for everything to run properly.
+
+### Help
+
+```
+libtbx.python sematura_launcher.py -h
+```
+
+
+
 

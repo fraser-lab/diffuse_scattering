@@ -16,14 +16,16 @@ target_cell =   (str(cella)+" "+str(cellb)+" "+str(cellc)+" "
 
 
 ###---------------file and directory names---------------###
-diffuse_lattice_prefix  ='cypa'
-image_prefix            ='set_1_1_'
-lunus_image_prefix      ='set_1_1lunus_'
-# work_dir                ='/Users/student/Desktop/vanben_diffuse_analysis'
-raw_image_dir           ='/Users/student/Desktop/vanben_diffuse_analysis'
-indexing_data_file_one  ='/Users/student/Desktop/vanben_diffuse_analysis/img/set_1_1_00010.cbf'
-indexing_data_file_two  ='/Users/student/Desktop/vanben_diffuse_analysis/img/set_1_1_00050.cbf'
-indexing_data_file_three='/Users/student/Desktop/vanben_diffuse_analysis/img/set_1_1_00090.cbf'
+diffuse_lattice_prefix  =   'cypa'
+image_prefix            =   'set_1_1_'
+lunus_image_prefix      =   'set_1_1lunus_'
+image_dir               =   '/netapp/home/awolff/cypa_redo/data'
+phenix_dir              =   '/netapp/home/awolff/packages/phenix-dev-2499'
+
+###-----------Choose files to use for indexing-----------###
+indexing_one   = str(10)            # number of first file for indexing
+indexing_two   = str(50)            # number of second file for indexing
+indexing_three = str(90)            # number of third file for indexing
 
 
 
@@ -52,8 +54,8 @@ polarim_polarization=str(0.98)      # polarization fraction (0.0-1.0)
 normim_tilt_x       =str(0.0)       # ask Mike W.
 normim_tilt_y       =str(0.0)       # ask Mike W.
 ### image scaling
-reference_image_number  =str(1)     # reference for scaling
-scale_inner_radius      =100        # ask Mike W.
-scale_outer_radius      =800        # ask Mike W.
+reference_image_number =str(1)     # reference for scaling
+scale_inner_radius     =100        # ask Mike W.
+scale_outer_radius     =800        # ask Mike W.
 
 
