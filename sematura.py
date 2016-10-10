@@ -428,7 +428,7 @@ class diffuse(object):
         for panel_id, panel in enumerate(detector):
 
             Isize1, Isize2 = panel.get_image_size()
-            print "Isize1 = "+Isize1+", Isize2 = "+Isize2
+            print "Isize1 = ",Isize1,", Isize2 = ",Isize2
             print "there are ",Isize1*Isize2," pixels in this diffraction image"
             if len(detector) > 1:
                 DATA = img.get_raw_data(panel_id)
