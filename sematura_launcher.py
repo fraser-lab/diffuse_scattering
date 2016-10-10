@@ -3,7 +3,7 @@
 #    =  code that has been commented out
 #---------------------------------------------------------------
 
-### Import required modules
+### Import required functions
 from subprocess import check_output, call
 from os import getcwd
 from glob import glob
@@ -14,7 +14,7 @@ from sematura import diffuse
 ### Import user-defined parameters
 from sematura_params import *
 
-
+### Setup command-line input flags and help messages
 epi ='''
 Dependencies:
     User must have LUNUS software package installed and compiled
@@ -30,15 +30,10 @@ parser.add_argument('-i', '--init', help='calculate reference statistic & prepar
 parser.add_argument('-p', '--process', help='processes all images and maps diffuse scattering to reciprocal lattice', action='store_true')
 parser.add_argument('-a', '--analysis', help='calculates mean & symmetrized mean lattices', action='store_true')
 parser.add_argument('-n', '--nocluster', help='allows user to run on non SGE environment (default submits jobs to SGE)', action='store_true')
-
-
 args = parser.parse_args()
-# print(args.accumulate(args.integers))
 
 
-
-###----------------Begin Variable Definitions-------------------###
-
+### Variable definitions
 lunus_dir = check_output(['which', 'symlt'])
 lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
 work_dir = check_output("pwd")
@@ -56,15 +51,14 @@ indexing_number_one   = files[int(indexing_one)]
 indexing_number_two   = files[int(indexing_two)]
 indexing_number_three = files[int(indexing_three)]
 
-###-----------------End Variable Definitions--------------------###
 
-
-###---------Runs fxns within Diffuse class...all work------------###
+### Remind user to set flags
 if len(argv)==1:
-    print "Error: Must provide at least one argument listed below\n"
+    print "error: Must provide at least one argument listed below\n"
     parser.print_help()
     exit(1)
 
+### Initialize & prepare for data analysis
 if args.init:
     ### Prepare reference
     initializer = diffuse(reference_number)
@@ -81,10 +75,10 @@ if args.init:
     indexer_three.cbf2img(indexing_number_three)
     # reference.indexing()
 
-
+### Process images, from raw data to diffuse lattice file for each
 if args.process:
-    # Make an SGE submission file for all of them
-      
+
+    ### Make an SGE submission script
     f = open("run_sematura.sh", "w")
     f.write("""
 #$ -S /bin/bash
@@ -112,13 +106,15 @@ libtbx.python %s/scripts/sematura.py $input
     """ % (getcwd(), getcwd(), num_files, tasknames, work_dir, phenix_dir, lunus_dir))
     f.close()
 
-
+    ### submit jobs to SGE cluster
     call(['qsub', '-sync', 'y', 'run_sematura.sh'])
 
+### Alternative processing for use without cluster environment
 if args.process & args.nocluster:
     for item in files:
         call(['libtbx.python', lunus_dir+'/scripts/sematura.py', item])
 
+### Analyze diffuse lattices and expand to P1 symmetry
 if args.analysis:
     analyzer = diffuse(reference_image_number)
     analyzer.mean_lattice()

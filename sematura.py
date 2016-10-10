@@ -3,18 +3,17 @@
 #    =  code that has been commented out
 #---------------------------------------------------------------
 
-### Import required modules
-import subprocess
+### Import required functions
 import numpy as np
-from sys import argv
+from subprocess import call, check_output, Popen
 from time import clock, time
-import re
-import glob
-import sys
-import os
-import copy
+from glob import glob
+from os.path import isdir
+from sys import argv
+from copy import deepcopy
 
-### Import required modules from phenix software package
+### Import required functions specific to Phenix
+from dxtbx import load
 from dxtbx.format.Registry import Registry
 from iotbx.phil import parse
 from dxtbx.datablock import DataBlockFactory
@@ -26,7 +25,7 @@ from dials.algorithms.indexing.real_space_grid_search \
 from sematura_params import *
 
 
-
+### Library of functions for diffuse scattering analysis
 class diffuse(object):
 
     def __init__(self, filenumber):
@@ -34,24 +33,24 @@ class diffuse(object):
         ### Define directories
         global work_dir, lunus_dir
 
-        lunus_dir = subprocess.check_output(['which', 'symlt'])
+        lunus_dir = check_output(['which', 'symlt'])
         lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
-        work_dir = subprocess.check_output("pwd")
+        work_dir = check_output("pwd")
         work_dir = work_dir.replace("\n","")
 
         ### Make subdirectories to organize output
-        if (os.path.isdir(work_dir+"/proc")) == True:
+        if (isdir(work_dir+"/proc")) == True:
             pass
         else:
-            subprocess.call(['mkdir', work_dir+"/proc"])
-        if (os.path.isdir(work_dir+"/radial_averages")) == True:
+            call(['mkdir', work_dir+"/proc"])
+        if (isdir(work_dir+"/radial_averages")) == True:
             pass
         else:
-            subprocess.call(['mkdir', work_dir+"/radial_averages"])
-        if (os.path.isdir(work_dir+"/lattices")) == True:
+            call(['mkdir', work_dir+"/radial_averages"])
+        if (isdir(work_dir+"/lattices")) == True:
             pass
         else:
-            subprocess.call(['mkdir', work_dir+"/lattices"])
+            call(['mkdir', work_dir+"/lattices"])
 
         ### Define filenames
         self.name   = (image_dir+"/"+image_prefix+filenumber+".img")
@@ -64,13 +63,11 @@ class diffuse(object):
                        +"_diffuse_"+filenumber+".vtk")
         self.counts = (work_dir+"/lattices/"+diffuse_lattice_prefix
                        +"_counts_"+filenumber+".vtk")
-        #self.stat   = (work_dir+"/xx.rf")
 
     ### This function converts the raw data to the img format
     def cbf2img(self, filenumber):
         
-        print "Converting file #"+filenumber+" to correct format"
-
+        print "Converting file #"+filenumber+" to IMG format"
         f = Registry.find(self.raw)
         img = f(self.raw)
         db = img.get_detectorbase()
@@ -78,14 +75,15 @@ class diffuse(object):
         db.read()
         db.show_header()
         print"Writing %s as %s"%(self.raw,self.name)
-
         db.debug_write(self.name)
+
         return
 
     ### This function uses Dials methods from Phenix to index the data
     def indexing(self):
 
-        raw_file_list = glob.glob(image_dir+"/"+image_prefix+"*.cbf")
+        ### Define names of files to use for indexing
+        raw_file_list = glob(image_dir+"/"+image_prefix+"*.cbf")
         indexing_data_file_one = raw_file_list[int(indexing_one)-1]
         indexing_data_file_one = indexing_data_file_one.replace(".cbf",".img")
         indexing_data_file_two = raw_file_list[int(indexing_two)-1]
@@ -93,8 +91,7 @@ class diffuse(object):
         indexing_data_file_three = raw_file_list[int(indexing_three)-1]
         indexing_data_file_three = indexing_data_file_three.replace(".cbf",".img")
 
-        print target_cell,target_sg
-
+        ### Input parameters for indexing
         phil_scope_str='''
              include scope dials.algorithms.spot_finding.factory.phil_scope
              include scope dials.algorithms.indexing.indexer.index_only_phil_scope
@@ -116,392 +113,322 @@ class diffuse(object):
             .unit_cell.restraints.tie_to_target = []
         params.refinement.parameterisation.crystal\
             .unit_cell.restraints.tie_to_group = []
-
         filenames = [indexing_data_file_one, indexing_data_file_two,
                      indexing_data_file_three]
 
-
+        ### Extract data for indexing
         datablock = DataBlockFactory.from_filenames(filenames)[0]
-
         observed = flex.reflection_table.from_observations(datablock, params)
         observed.as_pickle("strong.pickle")
         print "Number of observed reflections:", len(observed)
-
-        working_params = copy.deepcopy(params)
+        working_params = deepcopy(params)
         imagesets = datablock.extract_imagesets()
 
-
+        ### Report if beam parameters differ between images
+        print "Beam parameters from image:"
         print imagesets[0].get_beam()
-        print imagesets[2].get_beam()
+        print "Files used for indexing have same beam parameters:"
         print imagesets[0].get_beam() == imagesets[0].get_beam()
         print imagesets[1].get_beam() == imagesets[0].get_beam()
         print imagesets[2].get_beam() == imagesets[0].get_beam()
 
-        print "indexing..."
+        ### Index the data to get the crystal matrices
+        print "Indexing the data using a target space unit cell of:\n"+target_cell+"\nand a target space group number of:\n"+target_sg
         t0 = clock()
-
         idxr = indexer(observed, imagesets, params=working_params)
-
         tel = clock()-t0
-        print "done indexing (",tel," sec)"
+        print "Done indexing (",tel," sec)"
 
+        ### Report and store crystal matrices for mapping data to diffuse lattice
         indexed = idxr.refined_reflections
         experiments = idxr.refined_experiments
         print experiments.crystals()[0]
-
         global crystal_params
-
         crystal_params = experiments.crystals()[0]
-        # f = open("crystal_matrices.txt", "w")
-        # f.write("{}".format(experiments.crystals()[0]))
-        # f.close()
+
         return
-        
-        ### don't keep...just to figure out how to extract variables
-        # print type(experiments.crystals()[0])
-
-        ### extract space group variable after indexing
-        # print str(experiments.crystals()[0].get_space_group().info())
-
-        ### extract unit cell variables after indexing
-        # cella = experiments.crystals()[0].get_unit_cell().parameters()[0]
-        # cellb = experiments.crystals()[0].get_unit_cell().parameters()[1]
-        # cellc = experiments.crystals()[0].get_unit_cell().parameters()[2]
-        # alpha = experiments.crystals()[0].get_unit_cell().parameters()[3]
-        # beta  = experiments.crystals()[0].get_unit_cell().parameters()[4]
-        # gamma = experiments.crystals()[0].get_unit_cell().parameters()[5]
 
     ### This function uses Lunus methods to remove the Bragg peaks from
     ### the raw data
     def debragg(self, filenumber):
         
         print "Removing beamstop shadow from image"
-        subprocess.call(['punchim', self.name, punchim_xmin, punchim_xmax,
+        call(['punchim', self.name, punchim_xmin, punchim_xmax,
                           punchim_ymin, punchim_ymax, filenumber+"_tmp1.img"])
         print "Cleaning up edge of image"
-        subprocess.call(['windim', filenumber+'_tmp1.img', windim_xmin,
+        call(['windim', filenumber+'_tmp1.img', windim_xmin,
                           windim_xmax, windim_ymin, windim_ymax,
                           filenumber+'_tmp2.img'])
         print "Setting detection threshold"
-        subprocess.call(['thrshim', filenumber+'_tmp2.img', thrshim_min,
+        call(['thrshim', filenumber+'_tmp2.img', thrshim_min,
                           thrshim_max, filenumber+'_tmp3.img'])
         print "Correcting for beam polarization"
-        subprocess.call(['polarim', filenumber+'_tmp3.img',
+        call(['polarim', filenumber+'_tmp3.img',
                          filenumber+'_tmp4.img', polarim_dist,
                          polarim_polarization, polarim_offset])
-        print "Normalizing image"
-        subprocess.call(['normim', filenumber+'_tmp4.img',
+        print "Solid-angle normalization of image"
+        call(['normim', filenumber+'_tmp4.img',
                          filenumber+'_tmp5.img', normim_tilt_x, normim_tilt_y])
         print "Removing Bragg peaks from image"
-        subprocess.call(['modeim', filenumber+'_tmp5.img',
+        call(['modeim', filenumber+'_tmp5.img',
                          filenumber+'_tmp6.img', modeim_kernel_width,
                          modeim_bin_size])
         print "Cleaning up directory"
-        subprocess.call(['cp', filenumber+'_tmp6.img', self.lunus])
-        subprocess.call(['rm', filenumber+'_tmp1.img', filenumber+'_tmp2.img',
+        call(['cp', filenumber+'_tmp6.img', self.lunus])
+        call(['rm', filenumber+'_tmp1.img', filenumber+'_tmp2.img',
                          filenumber+'_tmp3.img',filenumber+'_tmp4.img',
                          filenumber+'_tmp5.img', filenumber+'_tmp6.img'])
-        return
 
+        return
 
     ### This function uses Lunus methods to create a radially averaged copy
     ### of the image for scaling purposes
     def radial_avg(self, filenumber):
 
-        print 'Averaging image'
-        subprocess.call(['avgrim', self.lunus, filenumber+'_tmp.rf'])
-        ### alternative is to keep the code below, make all input one string
-        ### and set shell=True
-        # subprocess.call(['binasc', '2', '<', 'tmp.rf', '>', self.radial])
+        print 'Creating radially averaged copy of image #'+filenumber
+        call(['avgrim', self.lunus, filenumber+'_tmp.rf'])
         infile,outfile = filenumber+'_tmp.rf',self.radial
         with open(outfile,'w') as ouf:
             with open(infile,'r') as inf:
-                proc = subprocess.Popen(
+                proc = Popen(
                     ['binasc', '2'],stdout=ouf,stdin=inf)
                 proc.wait()
+
         return
-    ### This function uses Lunus methods to create a radially averaged copy
-    ### of the user-chosen reference image for scaling purposes
+
+    ### This function uses Lunus methods to calculate a reference statistic
+    ### for calculating the scaling factor for all images
     def make_radial_ref(self):
 
-        print 'Making reference statistic'
-
+        ### Uses the radially averaged copy of the user chosen reference
+        print 'Making reference statistic for scaling'
         ref_one = open(self.radial, 'r')
         ref_one_lines = ref_one.readlines()
         ref_one.close()
-        # scale_inner_radius = scale_inner_radius - 1 #this includes inner radius value
+        
+        ### Only use ring around image defined by user
         ref_two = ref_one_lines[scale_inner_radius:scale_outer_radius]
         out_file = open('ref.asc', 'w')
         for line in ref_two:
             out_file.write(line)
         out_file.close()
 
-
-        ### alternative is to keep this line, make all input one string, and set shell=True
-        # subprocess.call(['binasc', '3', '<', 'ref.asc', '>', 'reference.rf'])
-
+        ### Create files used by scale_image calculations
         infile,outfile = 'ref.asc', 'reference.rf'
         with open(outfile,'w') as ouf:
             with open(infile,'r') as inf:
-                proc = subprocess.Popen(
+                proc = Popen(
                     ['binasc', '3'],stdout=ouf,stdin=inf)
                 proc.wait()
-
-        subprocess.call(['mulrf', 'reference.rf', 'reference.rf', 'xx.rf'])
-
-
-        # subprocess.call(['mv', 'reference.rf', '../'])
-        # subprocess.call(['mv', 'xx.rf', '../'])
-        # os.chdir(work_dir)
+        call(['mulrf', 'reference.rf', 'reference.rf', 'xx.rf'])
 
         return
 
-        # xx = subprocess.call(['avgrf', 'xx.rf'])
-
-        # print "Cleaning up directory"
-
-        # subprocess.call(['rm', 'xx.rf', 'ref.asc'])
-
-        # return xx
-
+    ### This function uses Lunus methods to calculate a scaling factor for
+    ### each diffraction image which will be used during integration onto
+    ### the diffuse lattice
     def scale_image(self, filenumber):
-        print 'calculating scaling factor for image'
 
+        ### Uses the radially averaged copy of the image
+        print 'Calculating scaling factor for image #'+filenumber
         ref_one = open(self.radial, 'r')
         ref_one_lines = ref_one.readlines()
         ref_one.close()
-        # scale_inner_radius = scale_inner_radius - 1
-        # this includes inner radius value
+
+        ### Only use ring around image defined by user
         ref_two = ref_one_lines[scale_inner_radius:scale_outer_radius]
         out_file = open(filenumber+'.asc', 'w')
         for line in ref_two:
             out_file.write(line)
         out_file.close()
 
-
-        ### alternative is to keep the code below, make all input one string
-        ### and set shell=True
-        # subprocess.call(['binasc', '3', '<', filenum+'.asc',
-        #                  '>', filenum+'.rf'])
-
         infile,outfile = filenumber+'.asc', filenumber+'.rf'
         with open(outfile,'w') as ouf:
             with open(infile,'r') as inf:
-                proc = subprocess.Popen(
+                proc = Popen(
                     ['binasc', '3'],stdout=ouf,stdin=inf)
                 proc.wait()
 
-        subprocess.call(['mulrf', 'reference.rf', filenumber+'.rf',
+        ### Use Lunus methods to find average value within ring
+        call(['mulrf', 'reference.rf', filenumber+'.rf',
                          filenumber+'_xy.rf'])
-        subprocess.call(['mulrf', filenumber+'.rf', filenumber+'.rf',
+        call(['mulrf', filenumber+'.rf', filenumber+'.rf',
                          filenumber+'_yy.rf'])
-        xx = float(subprocess.check_output(['avgrf', 'xx.rf']))
-        xy = float(subprocess.check_output(['avgrf', filenumber+'_xy.rf']))
-        yy = float(subprocess.check_output(['avgrf', filenumber+'_yy.rf']))
+        xx = float(check_output(['avgrf', 'xx.rf']))
+        xy = float(check_output(['avgrf', filenumber+'_xy.rf']))
+        yy = float(check_output(['avgrf', filenumber+'_yy.rf']))
 
+        ### Calculate scale factor for use during integration
         global scale_factor, scale_factor_error
         scale_factor = xx / xy
         scale_factor_error = np.sqrt(xx+yy*scale_factor*scale_factor
                                      -2.*scale_factor*xy)/np.sqrt(xx)
-
-        # return scale_factor, scale_factor_error
-
         print "This image has a scale factor of "+str(scale_factor)
         print "This image has a scale factor error of "+str(scale_factor_error)
+
         return
 
-    # this function maps diffuse data to a 3D lattice
+    ### This function maps diffuse data from an image onto a 3D lattice
     def procimg(self, Isize1,Isize2,scale_factor,mask_tag,A_matrix,rvec,
                 DATA,latxdim,latydim,latzdim):
         
         global lat
-
         tmid = clock()
 
-        # define the lattice indices at which h,k,l = 0,0,0
+        ### define the lattice indices at which h,k,l = 0,0,0
         i0=latxdim/2-1
         j0=latydim/2-1
         k0=latzdim/2-1
-        # total number of voxels in the lattice
+
+        ### total number of voxels in the lattice
         latsize = latxdim*latydim*latzdim
-        # generate lattice to store data & counts for averaging
-        lat = np.zeros(latsize*2, dtype=np.float32).reshape((2,latsize))
 
-        # Fetch A_matrix from processed image using Dials
-        alli = np.asanyarray(A_matrix)
-        alli = np.reshape(alli, (3,3))
-        # calculate h,k,l for every data point
-        H = np.tensordot(alli,rvec,(1,1))
+        ### generate lattice to store data & counts for averaging
+        lat = np.zeros(latsize*2, dtype=np.float32).reshape((2,latzdim,latydim,latxdim))
+
+        ### fetch A_matrix from Dials output after indexing
+        a_mat = np.array(A_matrix)
+        a_mat.shape = (3,3)
+
+        ### calculate h,k,l for every data point
+        print "Calculating h,k,l for each data point from image"
+        H = np.tensordot(a_mat,rvec,(1,1))
         H = np.transpose(H)
-
         tel = str(clock()-tmid)
         print "Calculated h,k,l for ",len(H[:]),\
               " data points ("+tel+" seconds)"
-        
 
-        # fetch data from processed image using Dials
-        val = np.asanyarray(DATA, dtype=int)
+        ### fetch data from Lunus processed image using Dials methods
+        val = np.array(DATA, dtype=int)
 
-        # rearrange order of data points to match h,k,l matrix (H)
+        ### rearrange order of data points to match h,k,l matrix (H)
         val.shape = (Isize2,Isize1)
         val = np.transpose(val)
         val = val.flatten()
 
-        # isolate all h's, k's, and l's
-        ii = H[:,0]
-        jj = H[:,1]
-        kk = H[:,2]
-
-        # adjust hkls
-        H[H>=0]+=0.5
-        H[H<0]-=0.5
-        H = np.asanyarray(H, dtype=int)
-
-        # adjusted hkls
+        ### isolate all h's, k's, and l's
         i = H[:,0]
         j = H[:,1]
         k = H[:,2]
 
-        ### calculate the displacement of this data point
+        ### adjust hkls to integer values
+        H_int = np.copy(H)
+        H_int[H_int>=0]+=0.5
+        H_int[H_int<0]-=0.5
+        H_int = np.array(H_int, dtype=int)
+
+        ### isolate all integer h's, k's, and l's
+        i_int = H_int[:,0]
+        j_int = H_int[:,1]
+        k_int = H_int[:,2]
+
+        ### calculate the displacement of every data point
         ### from the nearest Miller index
-        # make a mask that eliminates diffuse points
-        # that are too close to bravais lattice (h)
-        dimask = abs(ii-i)
-        dimask[dimask<0.25]=0
-        dimask[dimask!=0]=1.0
-        # make a mask that eliminates diffuse points 
-        # that are too close to bravais lattice (k)
-        djmask = abs(jj-j)
-        djmask[djmask<0.25]=0
-        djmask[djmask!=0]=1.0
-        # make a mask that eliminates diffuse points
-        # that are too close to bravais lattice (l)
-        dkmask = abs(kk-k)
-        dkmask[dkmask<0.25]=0
-        dkmask[dkmask!=0]=1.0
+        delta_i = abs(i-i_int)
+        delta_j = abs(j-j_int)
+        delta_k = abs(k-k_int)
 
-        # adjust hkls to map onto diffuse lattice
-        i = i + i0
-        j = j + j0
-        k = k + k0
+        ### adjust coordinates so that origin is centered on diffuse lattice
+        i_int += int(i0)
+        j_int += int(j0)
+        k_int += int(k0)
 
-        # make an array of indices to map data onto the diffuse lattice
-        index = k*latxdim*latydim + j*latxdim + i
-        index[index>len(lat[0])]=0
-        index = np.asanyarray(index, dtype=int)
+        ### make a boolean mask to be used for data & hkls
+        data_mask = np.array(val, dtype=bool)
+        ### mask data that are too close to bravais lattice
+        data_mask[delta_i<0.25] = False
+        data_mask[delta_j<0.25] = False
+        data_mask[delta_k<0.25] = False
+        ### mask data outside unit cell on diffuse lattice
+        data_mask[i_int<0] = False
+        data_mask[i_int>=latxdim] = False
+        data_mask[j_int<0] = False
+        data_mask[j_int>=latydim] = False
+        data_mask[k_int<0] = False
+        data_mask[k_int>=latzdim] = False
+        ### mask data with negative intensities
+        data_mask[val<=0] = False
+        ### mask data marked with mask_tag by lunus software
+        data_mask[val>=mask_tag] = False
+        
+        ### apply mask to data and associated hkls
+        val = val[data_mask]
+        i_int = i_int[data_mask]
+        j_int = j_int[data_mask]
+        k_int = k_int[data_mask]
 
-        # create a mask to eliminate any data point outside 1 unit cell (h)
-        imask = i
-        imask[imask<0]=0
-        imask[imask>=latxdim]=0
-        imask[imask!=0]=1.0
-        # create a mask to eliminate any data point outside 1 unit cell (k)
-        jmask = j
-        jmask[jmask<0]=0
-        jmask[jmask>=latydim]=0
-        jmask[jmask!=0]=1.0
-        # create a mask to eliminate any data point outside 1 unit cell (l)
-        kmask = k
-        kmask[kmask<0]=0
-        kmask[kmask>=latzdim]=0
-        kmask[kmask!=0]=1.0
-
-        # eliminate data with negative intensities
-        val[val<0]=0.0
-        # eliminate data marked with mask_tag by lunus software
-        val[val>=mask_tag]=0.0
-        # apply masks generated above
-        val = val*imask*jmask*kmask*dimask*djmask*dkmask
-
-        # map the data onto the diffuse lattice using the indices created above
-        np.add.at(lat[0], index, val)
-        lat[0][0]=0
-        # keep track of the number of data points
-        # added at each lattice point (for averaging)
+        ### map the data onto the diffuse lattice
+        np.add.at(lat[0], [k_int,j_int,i_int], val)
+        diff = lat[0].flatten()
+        ### keep track of the number of data points
+        ### added at each lattice point (for averaging)
         val[val!=0]=1
-        np.add.at(lat[1], index, val)
-        lat[0][0]=0
+        np.add.at(lat[1], [k_int,j_int,i_int], val)
+        coun = lat[1].flatten()
+
+        lat = [diff,coun]
 
         return lat
 
-    # This function integrates the diffuse scattering using the procimg fxn
+    ### This function integrates the diffuse scattering using the procimg fxn
     def integrator(self):
 
         global lt, ct, latxdim, latydim, latzdim, i0, j0, k0, latsize
 
+        ### set resolution of diffuse lattice
         res = float(resolution)
         latxdim = (int(cella/res)+1)*2
         latydim = (int(cellb/res)+1)*2
         latzdim = (int(cellc/res)+1)*2
-
-
         latsize = latxdim*latydim*latzdim
         print "Lattice size = ",latsize
         lt = np.zeros(latsize, dtype=np.float32)
         ct = np.zeros(latsize, dtype=np.float32)
-
-
-
+        ### set origin and tag value for null data
         i0=latxdim/2-1
         j0=latydim/2-1
         k0=latzdim/2-1
         mask_tag = 32767
 
-
-
+        ### use Dials to get data from processed image
         imgname = self.lunus
+        print "Integrating file %s with scale factor %f"%(imgname,scale_factor)
 
-        print "processing file %s with scale factor %f"%(imgname,scale_factor)
-
-        import dxtbx
-        img = dxtbx.load(imgname)
+        img = load(imgname)
         detector = img.get_detector()
         print detector
         beam = img.get_beam()
         scan = img.get_scan()
         gonio = img.get_goniometer()
 
-        print "transform pixel numbers to mm positions and rotational degrees"
-
-
-        print "Creating pixel map..."
+        ### map data from pixels to mm positions
+        print "mapping data from pixels to mm positions"
         t0 = clock()
-
-
         lab_coordinates = flex.vec3_double()
         for panel in detector: 
             pixels = flex.vec2_double(panel.get_image_size())
             mms = panel.pixel_to_millimeter(pixels)
             lab_coordinates.extend(panel.get_lab_coord(mms))
 
-        # generate s1 vectors
         s1_vectors = lab_coordinates.each_normalize() * (1/beam.get_wavelength())
-        # Generate x vectors
         x_vectors = s1_vectors - beam.get_s0()
-
         print "there are ",x_vectors.size()," elements in x_vectors"
-        tel = clock()-t0
-        print "done creating pixel map (",tel," sec)"
 
-        print "transform to laboratory axis reciprocal space coordinates"
-
-        print "transform to fractional miller indices and populate diffuse lattice"
-
-
-        crystal = copy.deepcopy(crystal_params)
+        ### get A_matrix from indexing fxn
+        crystal = deepcopy(crystal_params)
         axis = gonio.get_rotation_axis()
         start_angle, delta_angle = scan.get_oscillation()
         crystal.rotate_around_origin(axis, start_angle + (delta_angle/2), deg=True)
         A_matrix = crystal.get_A().inverse()
 
-
+        ### integrate diffuse scattering from single or multi panel detectors
         telmatmul=0
         t0 = clock()
         latit = None
         for panel_id, panel in enumerate(detector):
 
             Isize1, Isize2 = panel.get_image_size()
-            print "Isize1 = ",Isize1,", Isize2 = ",Isize2
+            print "Isize1 = "+Isize1+", Isize2 = "+Isize2
             print "there are ",Isize1*Isize2," pixels in this diffraction image"
             if len(detector) > 1:
                 DATA = img.get_raw_data(panel_id)
@@ -515,10 +442,10 @@ class diffuse(object):
             else:
                 latit += tmp_latit
         tel = clock()-t0
-        print "done integrating diffuse scattering (",tel," sec wall clock time)"
-        t0 = clock()
-        # accumulate integration data into a single lattice
+        print "done integrating diffuse scattering (",tel," sec)"
 
+        ### divide intensities from counts
+        t0 = clock()
         lt = np.add(lt,latit[0])
         ct = np.add(ct,latit[1])
         tel = clock()-t0
@@ -526,11 +453,10 @@ class diffuse(object):
 
         return lt, ct
 
-    # This function writes a vtk file containing the diffuse lattice
+    ### This function writes a vtk file containing the diffuse lattice
     def latout(self):
 
         make1 = self.latt
-        # write lattice to output file
         vtkfile = open(make1,"w")
 
         a_recip = 1./cella
@@ -559,11 +485,10 @@ class diffuse(object):
         vtkfile.close()
         return
     
-    # This function writes a vtk file containing the count
-    # of data points contributing to each point on the diffuse lattice
+    ### This function writes a vtk file containing the count
+    ### of data points contributing to each position on the diffuse lattice
     def ctout(self):
         make2 = self.counts
-
         vtkfile = open(make2,"w")
 
         a_recip = 1./cella
@@ -592,97 +517,82 @@ class diffuse(object):
         vtkfile.close()
         return
 
-    # This function calculates a mean lattice using all diffuse and counts
-    # files
+    ### This function calculates a mean lattice using all diffuse and counts
+    ### files
     def mean_lattice(self):
         
-        # i = 1
-        # num_imgs = 360 ###!!!put this in params or define using iglob!!!###
-
-        # # initialize lattice before summing
-        # latnumber = '{:05.0f}'.format(i)
-        # lattice1   = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                      # +"_diffuse_"+reference_image_number+".vtk")
-        # lattice_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"*.vtk")
-        diffuse_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_diffuse_*.vtk")
-        counts_file_list = glob.glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_counts_*.vtk")
-
+        ### gather file names for averaging
+        diffuse_file_list = glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_diffuse_*.vtk")
+        counts_file_list = glob(work_dir+"/lattices/"+diffuse_lattice_prefix+"_counts_*.vtk")
         mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.lat")
         mean_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.vtk")
 
-        
+        ### create a template lattice to accumulate intensities on
+        call(['vtk2lat', diffuse_file_list[0], 'temp.lat'])
+        call(['constlt', 'temp.lat', 'temp_diffuse_sum.lat', '0.0'])
+        call(['constlt', 'temp.lat', 'temp_counts_sum.lat', '0.0'])
 
-        subprocess.call(['vtk2lat', diffuse_file_list[0], 'temp.lat'])
-        subprocess.call(['constlt', 'temp.lat', 'temp_diffuse_sum.lat', '0.0'])
-        subprocess.call(['constlt', 'temp.lat', 'temp_counts_sum.lat', '0.0'])
-
-        # sum diffuse lattices and counts
+        ### sum diffuse intensities at each position on lattice
         for item in diffuse_file_list:
-            # latnumber = '{:05.0f}'.format(i)
-            # lattice   = (raw_image_dir+"/lattices/"+diffuse_lattice_prefix
-            #              +"_diffuse_"+latnumber+".vtk")
-            # counts   = (raw_image_dir+"/lattices/"+diffuse_lattice_prefix
-                         # +"_counts_"+latnumber+".vtk")
 
-            subprocess.call(['vtk2lat', item, 'temp_diffuse.lat'])
-            
-            subprocess.call(['sumlt', 'temp_diffuse_sum.lat',
+            call(['vtk2lat', item, 'temp_diffuse.lat'])
+            call(['sumlt', 'temp_diffuse_sum.lat',
                              'temp_diffuse.lat', 'temp.lat'])
-            subprocess.call(['mv', 'temp.lat', 'temp_diffuse_sum.lat'])
-            
-            # i+=1
-        for item in counts_file_list:
-            subprocess.call(['vtk2lat', item, 'temp_counts.lat'])
-            subprocess.call(['sumlt', 'temp_counts_sum.lat',
-                             'temp_counts.lat', 'temp.lat'])
-            subprocess.call(['mv', 'temp.lat', 'temp_counts_sum.lat'])
+            call(['mv', 'temp.lat', 'temp_diffuse_sum.lat'])
 
-        
-        subprocess.call(['divlt', 'temp_diffuse_sum.lat', 'temp_counts_sum.lat'
+        ### sum counts at each position on lattice
+        for item in counts_file_list:
+            call(['vtk2lat', item, 'temp_counts.lat'])
+            call(['sumlt', 'temp_counts_sum.lat',
+                             'temp_counts.lat', 'temp.lat'])
+            call(['mv', 'temp.lat', 'temp_counts_sum.lat'])
+
+        ### calculate and write mean lattice file
+        call(['divlt', 'temp_diffuse_sum.lat', 'temp_counts_sum.lat'
                          , 'temp_mean.lat'])
-        subprocess.call(['lat2vtk', 'temp_mean.lat', mean_lattice_file])
-        subprocess.call(['rm', 'temp_diffuse_sum.lat', 'temp_counts_sum.lat'])
-        subprocess.call(['mv', 'temp_mean.lat', mean_lat_file])
+        call(['lat2vtk', 'temp_mean.lat', mean_lattice_file])
+        call(['rm', 'temp_diffuse_sum.lat', 'temp_counts_sum.lat'])
+        call(['mv', 'temp_mean.lat', mean_lat_file])
+
         return
 
-
+    ### This function uses symmetry operations within Lunus to expand
+    ### the mean lattice intensities to P1 point-group symmetry.
     def symmetrize(self):
 
+        ### gather files for calculations
         mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.lat")
         sym_lat_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
                               +"_mean_sym.lat")
         sym_lattice_file = (work_dir+"/lattices/"+diffuse_lattice_prefix
                               +"_mean_sym.vtk")
+        ### file mapping space group to lunus input
         sg_conv = open(lunus_dir+"/analysis/sg_pg_lunus.csv","r")
         sg_conv_lines = sg_conv.readlines()
-
+        ### parse file without pandas
         lines = None
         lunus_key = ""
         laue_class = ""
         for line in sg_conv_lines:
             line = line.split('\r')
             lines = line
-
-
+        ### get laue class and Lunus input from file
         for item in lines:
             item = item.split(',')
             if item[0] == target_sg:
                 lunus_key += item[4]
                 laue_class += item[3]
-        
-        # print lunus_key
-        # print laue_class
-        # sg_conv = pd.read_csv(work_dir+"/analysis/sg_pg_lunus.csv", low_memory=False)
-        # lunus_key = sg_conv['lunus_number'][target_sg]
 
-        subprocess.call(['xflt', mean_lat_file, 'tmp_xf.lat', '1'])
+        ### use Lunus methods to apply symmetry operations
+        call(['xflt', mean_lat_file, 'tmp_xf.lat', '1'])
         print "Symmetrizing lattice based on symmetry operators for Laue Class: "+laue_class
-        subprocess.call(['symlt', 'tmp_xf.lat', sym_lat_file, lunus_key])
-        subprocess.call(['lat2vtk', sym_lat_file, sym_lattice_file])
+        call(['symlt', 'tmp_xf.lat', sym_lat_file, lunus_key])
+        call(['lat2vtk', sym_lat_file, sym_lattice_file])
+        
         return
 
 
-# ###----------------Direct call of script-------------------###
+###----------------Direct call of script-------------------###
 
 def main():
     script, filenum = argv
