@@ -11,8 +11,23 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from sys import exit, argv
 from sematura import diffuse
 
-### Import user-defined parameters
+### Import user-defined parameters & log them
 from sematura_params import *
+
+def logger():
+
+    import sematura_params
+    
+    paramlog = open('param.log', 'w')
+
+    for item in dir(sematura_params):
+        if item[0] != '_':
+            line = str(item) + ' = ' + str(getattr(sematura_params, item)) + '\n'
+            paramlog.write(line)
+
+    return
+
+
 
 ### Setup command-line input flags and help messages
 epi ='''
@@ -61,6 +76,7 @@ if len(argv)==1:
 ### Initialize & prepare for data analysis
 if args.init:
     ### Prepare reference
+    logger()
     initializer = diffuse(reference_number)
     initializer.cbf2img(reference_number)
     initializer.debragg(reference_number)
@@ -73,7 +89,7 @@ if args.init:
     indexer_two.cbf2img(indexing_number_two)
     indexer_three = diffuse(indexing_number_three)
     indexer_three.cbf2img(indexing_number_three)
-    # reference.indexing()
+    initializer.indexing()
 
 ### Process images, from raw data to diffuse lattice file for each
 if args.process:
@@ -118,6 +134,7 @@ if args.process & args.nocluster:
 if args.analysis:
     analyzer = diffuse(reference_image_number)
     analyzer.mean_lattice()
+    analyzer.array2vtk(work_dir+"/arrays/"+diffuse_lattice_prefix+"_mean.npz", "mean_lt")
     analyzer.symmetrize()
 
 
