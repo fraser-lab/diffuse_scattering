@@ -160,28 +160,27 @@ class diffuse(object):
     ### the raw data
     def debragg(self, filenumber):
         
-        print "Setting detection threshold"
-        call(['thrshim', self.name, thrshim_min,
-                          thrshim_max, filenumber+'_tmp1.img'])
         print "Removing beamstop shadow from image"
-        call(['punchim', filenumber+"_tmp1.img", punchim_xmin, punchim_xmax,
-                          punchim_ymin, punchim_ymax, filenumber+"_tmp2.img"])
+        call(['punchim', self.name, punchim_xmin, punchim_xmax,
+                          punchim_ymin, punchim_ymax, filenumber+"_tmp1.img"])
         print "Cleaning up edge of image"
-        call(['windim', filenumber+'_tmp2.img', windim_xmin,
+        call(['windim', filenumber+'_tmp1.img', windim_xmin,
                           windim_xmax, windim_ymin, windim_ymax,
-                          filenumber+'_tmp3.img'])
-        print "Removing Bragg peaks from image"
-        call(['modeim', filenumber+'_tmp3.img',
-                         filenumber+'_tmp4.img', modeim_kernel_width,
-                         modeim_bin_size])
+                          filenumber+'_tmp2.img'])
+        print "Setting detection threshold"
+        call(['thrshim', filenumber+'_tmp2.img', thrshim_min,
+                          thrshim_max, filenumber+'_tmp3.img'])
         print "Correcting for beam polarization"
-        call(['polarim', filenumber+'_tmp4.img',
-                         filenumber+'_tmp5.img', polarim_dist,
+        call(['polarim', filenumber+'_tmp3.img',
+                         filenumber+'_tmp4.img', polarim_dist,
                          polarim_polarization, polarim_offset])
         print "Solid-angle normalization of image"
-        call(['normim', filenumber+'_tmp5.img',
-                         filenumber+'_tmp6.img', normim_tilt_x, normim_tilt_y])
-        
+        call(['normim', filenumber+'_tmp4.img',
+                         filenumber+'_tmp5.img', normim_tilt_x, normim_tilt_y])
+        print "Removing Bragg peaks from image"
+        call(['modeim', filenumber+'_tmp5.img',
+                         filenumber+'_tmp6.img', modeim_kernel_width,
+                         modeim_bin_size])
         print "Cleaning up directory"
         call(['cp', filenumber+'_tmp6.img', self.lunus])
         call(['rm', filenumber+"_tmp1.img", filenumber+'_tmp2.img',
@@ -238,6 +237,8 @@ class diffuse(object):
     ### the diffuse lattice
     def scale_image(self, filenumber):
 
+        global scale_factor, scale_factor_error
+
         ### Uses the radially averaged copy of the image
         print 'Calculating scaling factor for image #'+filenumber
         ref_one = open(self.radial, 'r')
@@ -268,7 +269,7 @@ class diffuse(object):
         yy = float(check_output(['avgrf', filenumber+'_yy.rf']))
 
         ### Calculate scale factor for use during integration
-        global scale_factor, scale_factor_error
+        global scale_factor_error, scale_factor_error
         scale_factor = xx / xy
         scale_factor_error = np.sqrt(xx+yy*scale_factor*scale_factor
                                      -2.*scale_factor*xy)/np.sqrt(xx)
@@ -369,13 +370,16 @@ class diffuse(object):
         ### map the data onto the diffuse lattice
         np.add.at(lat[0], [k_int,j_int,i_int], val)
         diff = lat[0].flatten()
+        diff_scaled = np.multiply(diff,scale_factor)
         ### keep track of the number of data points
         ### added at each lattice point (for averaging)
         val[val!=0]=1
         np.add.at(lat[1], [k_int,j_int,i_int], val)
         coun = lat[1].flatten()
 
-        lat = [diff,coun]
+        # diff_scaled[coun==0] = 32767
+
+        lat = [diff_scaled,coun]
 
         return lat
 
@@ -490,7 +494,7 @@ class diffuse(object):
         c_recip = 1./cellc
 
         print >>vtkfile,"# vtk DataFile Version 2.0"
-        print >>vtkfile,"lattice_type=PR;unit_cell={0};space_group={1};".format(target_cell,target_sg)
+        print >>vtkfile,"lattice_type=PR;unit_cell={0},{1},{2},{3},{4},{5};space_group={6};".format(cella,cellb,cellc,alpha,beta,gamma, target_sg)
         print >>vtkfile,"ASCII"
         print >>vtkfile,"DATASET STRUCTURED_POINTS"
         print >>vtkfile,"DIMENSIONS %d %d %d"%(latxdim,latydim,latzdim)
@@ -520,16 +524,19 @@ class diffuse(object):
         sum_int = sum_file['lt']
         sum_ct = sum_file['ct']
         sum_int[:]=0
-        sum_ct[:]=1
+        sum_ct[:]=0
         for item in intensity_file_list:
             data = np.load(item)
             sum_int += data['lt']
             sum_ct += data['ct']
             data.close()
-        mean_lt = np.divide(sum_int,sum_ct)
-
+        sum_int_masked = np.ma.array(sum_int,mask=sum_ct==0)
+        sum_ct_masked = np.ma.array(sum_ct,mask=sum_ct==0)
+        mean_lt = np.divide(sum_int_masked,sum_ct_masked)
+        mean_lt.set_fill_value(-32768)
+        mean_lt_clean = mean_lt.filled()
         out = (work_dir+"/arrays/"+diffuse_lattice_prefix+"_mean.npz")
-        np.savez(out, mean_lt=mean_lt)
+        np.savez(out, mean_lt=mean_lt_clean)
 
         return
 
@@ -541,11 +548,11 @@ class diffuse(object):
         mean_vtk_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.vtk")
         mean_lat_file   = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean.lat")
         sym_lat_file    = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                              +"_aniso_sym.lat")
+                              +"_mean_sym.lat")
         sym_vtk_file    = (work_dir+"/lattices/"+diffuse_lattice_prefix
-                              +"_aniso_sym.vtk")
-        aniso_lat_file  = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_aniso.lat")
-        aniso_vtk_file  = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_aniso.vtk")
+                              +"_mean_sym.vtk")
+        aniso_lat_file  = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean_sym_aniso.lat")
+        aniso_vtk_file  = (work_dir+"/lattices/"+diffuse_lattice_prefix+"_mean_sym_aniso.vtk")
         ### file mapping space group to lunus input
         sg_conv = open(lunus_dir+"/analysis/sg_pg_lunus.csv","r")
         sg_conv_lines = sg_conv.readlines()
@@ -563,21 +570,24 @@ class diffuse(object):
                 lunus_key += item[4]
                 laue_class += item[3]
 
-        ### Isolate the anisotropic signal from mean lattice
-        print 'Isolating the anisotropic signal'
-        call(['vtk2lat', mean_vtk_file, mean_lat_file])
-        call(['xflt', mean_lat_file, 'tmp_xf.lat', '1'])
-        call(['avgrlt', 'tmp_xf.lat', 'tmp_xf.rf'])
-        call(['subrflt', 'tmp_xf.rf', 'tmp_xf.lat', aniso_lat_file])
-        call(['lat2vtk', aniso_lat_file, aniso_vtk_file])
-
 
         ### use Lunus methods to apply symmetry operations
         print "Symmetrizing lattice based on symmetry operators for Laue Class: "+laue_class
-        call(['xflt', aniso_lat_file, 'tmp2_xf.lat', '1'])
-        call(['symlt', 'tmp2_xf.lat', sym_lat_file, lunus_key])
+        call(['vtk2lat', mean_vtk_file, mean_lat_file])
+        # call(['xflt', aniso_lat_file, 'tmp2_xf.lat', '1'])
+        call(['symlt', mean_lat_file, sym_lat_file, lunus_key])
         call(['lat2vtk', sym_lat_file, sym_vtk_file])
-        
+
+
+        ### Isolate the anisotropic signal from mean lattice
+        print 'Isolating the anisotropic signal'
+        ### the step below decreased correlation coefficient by less than 0.001 but don't need it
+        # call(['xflt', mean_lat_file, 'tmp_xf.lat', '1'])
+        call(['avgrlt', sym_lat_file, 'tmp_xf.rf'])
+        call(['subrflt', 'tmp_xf.rf', sym_lat_file, aniso_lat_file])
+        call(['lat2vtk', aniso_lat_file, aniso_vtk_file])
+
+
         return
 
         
