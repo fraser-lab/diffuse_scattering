@@ -35,7 +35,7 @@ class diffuse(object):
         global work_dir, lunus_dir
 
         lunus_dir = check_output(['which', 'symlt'])
-        lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
+        # lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
         work_dir = check_output("pwd")
         work_dir = work_dir.replace("\n","")
 
@@ -58,11 +58,10 @@ class diffuse(object):
         #     call(['mkdir', work_dir+"/arrays"])
 
         ### Define filenames
-        self.name   = (image_dir+"/"+image_prefix+filenumber+".img")
-        self.lunus  = (work_dir+"/proc/"+lunus_image_prefix
-                       +filenumber+".img")
-        self.radial = (work_dir+"/radial_averages/"+lunus_image_prefix
-                       +filenumber+".asc")
+        # self.name   = (image_dir+"/"+image_prefix+filenumber+".img")
+        self.lunus  = (work_dir+"/"+lunus_image_prefix+filenumber+".cbf")
+        # self.radial = (work_dir+"/radial_averages/"+lunus_image_prefix
+                       # +filenumber+".asc")
         self.raw    = (image_dir+"/"+image_prefix+filenumber+".cbf")
         # self.latt   = (work_dir+"/lattices/"+diffuse_lattice_prefix
         #                +"_diffuse_"+filenumber+".vtk")
@@ -77,12 +76,13 @@ class diffuse(object):
     ### the raw data
     def debragg(self, filenumber):
         
+        import lunus
         import dxtbx
+        from dxtbx.format.FormatCBFMini import FormatCBFMini
+        from lunus import LunusDIFFIMAGE
+        import os
         from scitbx.matrix import sqr, col
-        import numpy as np
-        import matplotlib.pyplot as plt
         import time
-        import lunustbx as ln
 
         start_cpu = time.clock()
         start_real = time.time()
@@ -91,53 +91,45 @@ class diffuse(object):
         detector = frame.get_detector()
         beam = frame.get_beam()
         s0 = beam.get_s0()
+        gonio = frame.get_goniometer()
+        scan = frame.get_scan()
+
 
         for panel in detector:
             beam_center = col(panel.get_beam_centre_px(s0))
             Isizex, Isizey = panel.get_image_size()
 
+        data = frame.get_raw_data()
 
-
-        intz = frame.get_raw_data()
-
-        val = intz.as_numpy_array()
-
-        val2 = val.astype(np.int64)
-
+        A = LunusDIFFIMAGE()
+        A.set_image(data)
         print 'Removing beamstop shadow from image'
-        beamed = ln.beamstop_filt(val2, punchim_xmin, punchim_xmax, punchim_ymin, punchim_ymax)
+        A.LunusPunchim(punchim_xmin, punchim_ymin, punchim_xmax, punchim_ymax)
         print 'Cleaning up edge of image'
-        windowed = ln.edge_filt(beamed, windim_xmin, windim_xmax, windim_ymin, windim_ymax)
+        A.LunusWindim(windim_xmin, windim_ymin, windim_xmax, windim_ymax)
         print "Setting detection threshold"
-        thrshd = ln.thrsh_filt(windowed, thrshim_min, thrshim_max)
-        print "Correcting for beam polarization"
-        polaroid = ln.polar_filt(thrshd, beam_center[0], beam_center[1], polarim_dist, polarim_polarization, polarim_offset, 0.172)
-        print "Solid-angle normalization of image"
-        normal = ln.solid_angle_filt(polaroid, beam_center[0], beam_center[1], polarim_dist, normim_tilt_x, normim_tilt_y, 0.172)
-
+        A.LunusThrshim(thrshim_min, thrshim_max)
+        # print "Correcting for beam polarization"
+        # polaroid = ln.polar_filt(thrshd, beam_center[0], beam_center[1], polarim_dist, polarim_polarization, polarim_offset, 0.172)
+        # print "Solid-angle normalization of image"
+        # normal = ln.solid_angle_filt(polaroid, beam_center[0], beam_center[1], polarim_dist, normim_tilt_x, normim_tilt_y, 0.172)
+        print "Removing Bragg peaks from image"
+        A.LunusModeim(20)
+        print "Mode filter finished."
+        data2 = A.get_image();
+        #dxtbx.format.FormatCBFMini.FormatCBFMini.as_file(detector,beam,gonio,scan,data,path,header_convention="GENERIC_MINI",det_type="GENERIC")
+        FormatCBFMini.as_file(detector,beam,gonio,scan,data2,self.lunus)
 
         end_cpu = time.clock()
         end_real = time.time()
         print("%f Real Seconds" % (end_real - start_real))
         print("%f CPU seconds" % (end_cpu - start_cpu))
 
-        OK = np.asarray(normal)
-        max_int_idx=np.max(OK)+1
-        print("The largest intensity before mode filtering = %f" % (max_int_idx))
-
-        start_cpu2 = time.clock()
-        start_real2 = time.time()
-
-
-        print "Removing Bragg peaks from image"
-        moded = ln.mode_filt(normal, 10, max_int_idx)
-
-        end_cpu2 = time.clock()
-        end_real2 = time.time()
-        print("Diffuse signal isolated in %f Real Seconds" % (end_real2 - start_real2))
-        print("%f CPU seconds" % (end_cpu2 - start_cpu2))
-
-        lunus_img = np.asarray(moded)
+        # lunus_img = np.asarray(data2)
+        lun = dxtbx.load(self.lunus)
+        data_out = lun.get_raw_data()
+        lunus_img = data_out.as_numpy_array()
+        # lunus_img.shape = (Isizey,Isizex)
         return lunus_img, beam_center
 
     ### This function creates a radially averaged copy
@@ -156,10 +148,11 @@ def radial_avg(data, center, name):
     with np.errstate(invalid='ignore', divide='ignore'):
         radial_avg = tbin / nr
 
-    import matplotlib.pyplot as plt
-    plt.figure(num=2, figsize=(15,5))
-    plt.plot(radial_avg)
-    plt.savefig(name+".png", dpi=300)
+        ### matplotlib failing to import in current DIALS build
+    # import matplotlib.pyplot as plt
+    # plt.figure(num=2, figsize=(15,5))
+    # plt.plot(radial_avg)
+    # plt.savefig(name+".png", dpi=300)
     
     return radial_avg
 

@@ -41,7 +41,7 @@ punchim_xmin    =1156          # left border of beam stop shadow (pixels)
 punchim_ymax    =1363          # top border of beam stop shadow (pixels)
 punchim_ymin    =1224          # bottom border of beam stop shadow (pixels)
 ### intensity thresholds
-thrshim_max     =1000         # maximum reliable intensity for detector (count)
+thrshim_max     =10000         # maximum reliable intensity for detector (count)
 thrshim_min     =1             # minimum intensity for diffuse analysis (count)
 ### binning to remove Bragg peaks
 modeim_bin_size     =1        # mask bin for mode filtering (count)
