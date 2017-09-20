@@ -6,34 +6,34 @@
 ### Import required functions
 from subprocess import check_output, call
 from os import getcwd
+from os.path import dirname
 from glob import glob
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from sys import exit, argv
-from sematura import diffuse
+from sematura import DiffuseExperiment, DiffuseImage
 
-### Import user-defined parameters & log them
-from sematura_params import *
+# ### Import user-defined parameters & log them
+# from sematura_params import *
 
-def logger():
+# def logger():
 
-    import sematura_params
+#     import sematura_params
     
-    paramlog = open('param.log', 'w')
+#     paramlog = open('param.log', 'w')
 
-    for item in dir(sematura_params):
-        if item[0] != '_':
-            line = str(item) + ' = ' + str(getattr(sematura_params, item)) + '\n'
-            paramlog.write(line)
+#     for item in dir(sematura_params):
+#         if item[0] != '_':
+#             line = str(item) + ' = ' + str(getattr(sematura_params, item)) + '\n'
+#             paramlog.write(line)
 
-    return
+#     return
 
 
 
 ### Setup command-line input flags and help messages
 epi ='''
 Dependencies:
-    User must have LUNUS software package installed and compiled
-    User must have PHENIX software package installed & sourced.
+    User must have DIALS software package installed & sourced.
 
 Control flow:
     Use "i", "p", and "a" flags. All three can be launched in a single job.
@@ -45,61 +45,88 @@ parser.add_argument('-i', '--init', help='calculate reference statistic & prepar
 parser.add_argument('-p', '--process', help='processes all images and maps diffuse scattering to reciprocal lattice', action='store_true')
 parser.add_argument('-a', '--analysis', help='calculates mean & symmetrized mean lattices', action='store_true')
 parser.add_argument('-n', '--nocluster', help='allows user to run on non SGE environment (default submits jobs to SGE)', action='store_true')
+parser.add_argument('-exp', '--experiment_file', help='input experiment file from DIALS or XDS')
+parser.add_argument('-d', '--d_min', help='input highest resolution bin for data processing')
+parser.add_argument('-ref', '--reflection_file', help='input reflection file from DIALS or XDS')
+
 args = parser.parse_args()
 
 
 ### Variable definitions
 lunus_dir = check_output(['which', 'symlt'])
 lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
-work_dir = check_output("pwd")
-work_dir = work_dir.replace("\n","")
-raw_file_list = glob(image_dir+"/"+image_prefix+"*.cbf")
-num_files = len(raw_file_list)
-tasknames = "0"
-for item in raw_file_list:
-    f, t = item.split(".")
-    tasknames += " " + f[-5:]
-
-files = tasknames.split(' ')
-reference_number      = files[int(reference_image_number)]
-indexing_number_one   = files[int(indexing_one)]
-indexing_number_two   = files[int(indexing_two)]
-indexing_number_three = files[int(indexing_three)]
+dials = check_output(["which", "dials.version"])
+dials_dir = dirname(dials)
+dials_dir = dials_dir.replace("bin","setpaths.sh")
+work_dir = getcwd()
 
 
-### Remind user to set flags
-if len(argv)==1:
-    print "error: Must provide at least one argument listed below\n"
+
+if not args.experiment_file:
+    print "error: Must provide at experiment file from DIALS or XDS"
     parser.print_help()
     exit(1)
+
+if not args.d_min:
+    print "error: Must provide d_min"
+    parser.print_help()
+    exit(1)
+
+### Remind user to set flags
+if not any([item for item in [args.init, args.process, args.analysis]]):
+    print "error: Must provide at least one instructional argument (-i -p -a)\n"
+    parser.print_help()
+    exit(1)
+
+
+
+
+test_exp = DiffuseExperiment()
+test_exp.read_experiment_file(args.experiment_file)
+img_set = test_exp.experiments.imagesets()
+imgs = img_set[0]
+file_list = imgs.paths()
+img_one =  file_list[0]
+num_files = len(file_list)
+tasknames = "0"
+for item in file_list:
+    tasknames += " " + item
+
 
 ### Initialize & prepare for data analysis
 if args.init:
     ### Prepare reference
-    logger()
-    initializer = diffuse(reference_number)
-    initializer.cbf2img(reference_number)
-    initializer.debragg(reference_number)
-    initializer.radial_avg(reference_number)
-    initializer.make_radial_ref()
-    ### Prepare indexing files
-    indexer_one = diffuse(indexing_number_one)
-    indexer_one.cbf2img(indexing_number_one)
-    indexer_two = diffuse(indexing_number_two)
-    indexer_two.cbf2img(indexing_number_two)
-    indexer_three = diffuse(indexing_number_three)
-    indexer_three.cbf2img(indexing_number_three)
-    initializer.indexing()
+    test_img = DiffuseImage(img_one)
+    test_img.set_general_variables()
+    test_img.remove_bragg_peaks()
+    test_img.radial_average(reference=True)
+
+
+    # logger()
+    # initializer = diffuse(reference_number)
+    # initializer.cbf2img(reference_number)
+    # initializer.debragg(reference_number)
+    # initializer.radial_avg(reference_number)
+    # initializer.make_radial_ref()
+    # ### Prepare indexing files
+    # indexer_one = diffuse(indexing_number_one)
+    # indexer_one.cbf2img(indexing_number_one)
+    # indexer_two = diffuse(indexing_number_two)
+    # indexer_two.cbf2img(indexing_number_two)
+    # indexer_three = diffuse(indexing_number_three)
+    # indexer_three.cbf2img(indexing_number_three)
+    # initializer.indexing()
 
 ### Process images, from raw data to diffuse lattice file for each
 if args.process:
+    if not args.nocluster:
 
-    ### Make an SGE submission script
-    f = open("run_sematura.sh", "w")
-    f.write("""
+        ### Make an SGE submission script
+        f = open("run_sematura.sh", "w")
+        f.write("""
 #$ -S /bin/bash
-#$ -o %s/out
-#$ -e %s/err
+#$ -o %s/out/$SGE_TASK_ID
+#$ -e %s/err/$SGE_TASK_ID
 #$ -cwd
 #$ -r y
 #$ -j y
@@ -115,26 +142,26 @@ input="${tasks[$SGE_TASK_ID]}"
 
 cd %s
 
-. %s/phenix_env.sh
+. %s
 
-libtbx.python %s/scripts/sematura.py $input
+libtbx.python %s/scripts/sematura.py %s $input %s
 
-    """ % (getcwd(), getcwd(), num_files, tasknames, work_dir, phenix_dir, lunus_dir))
-    f.close()
+        """ % (work_dir, work_dir, num_files, tasknames, work_dir, dials_dir, lunus_dir, args.experiment_file, args.d_min))
+        f.close()
 
-    ### submit jobs to SGE cluster
-    call(['qsub', '-sync', 'y', 'run_sematura.sh'])
+        ### submit jobs to SGE cluster
+        call(['qsub', '-sync', 'y', 'run_sematura.sh'])
 
 ### Alternative processing for use without cluster environment
 if args.process & args.nocluster:
-    for item in files:
-        call(['libtbx.python', lunus_dir+'/scripts/sematura.py', item])
+    for item in file_list:
+        call(['libtbx.python', lunus_dir+'/scripts/sematura.py', args.experiment_file, item, args.d_min])
 
 ### Analyze diffuse lattices and expand to P1 symmetry
 if args.analysis:
-    analyzer = diffuse(reference_image_number)
+    analyzer = DiffuseImage(img_one)
     analyzer.mean_lattice()
-    analyzer.array2vtk(work_dir+"/arrays/"+diffuse_lattice_prefix+"_mean.npz", "mean_lt")
-    analyzer.symmetrize()
+    analyzer.array_to_vtk()
+    analyzer.average_symmetry_mates()
 
 

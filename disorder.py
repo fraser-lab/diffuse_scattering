@@ -55,6 +55,8 @@ class DisorderModel(object):
         self.space_group = fc_square.space_group()
         self.laue_group = self.space_group.laue_group_type()
 
+        print("unit cell: {}".format(self.unit_cell))
+
         return
 
     def write_hkl(self):
@@ -140,7 +142,7 @@ class DisorderModel(object):
         import subprocess
         ### improper workaround...the hkl2lat needs a template, but this should be a data file
         ### or a blank lattice of defined dimensions
-        template = "5f66_Icalc_bijvoet.lat"
+        template = "data.lat"
         subprocess.call(['hkl2lat', self.hkl, self.lat, template])
 
 
@@ -188,34 +190,153 @@ class DisorderModel(object):
         return
 
 
-    def build_llm(self, gamma, sigma):
+    def build_llm(self, x):
+        import numpy as np
         print("Creating Liquid-Like Motions (LLM) model of the diffuse scattering based on {}".format(self.name))
+        gamma = x[0]
+        sigma = x[1]
 
         import subprocess
+
         ### make llm model
         subprocess.call(['llmlt', self.lat, self.name+"_llm.lat", self.unit_cell, str(gamma), str(sigma)])
         subprocess.call(['symlt', self.name+"_llm.lat", self.name+"_llm_sym.lat", str(lunus_sym_lib[self.laue_group])])
         subprocess.call(['anisolt', self.name+"_llm_sym.lat", self.name+"_llm_sym_aniso.lat", self.unit_cell])
+        subprocess.call(['cullreslt', self.name+"_llm_sym_aniso.lat", self.name+"_llm_sym_aniso_culled.lat", "31.2", "1.45", self.unit_cell])
+        R = subprocess.check_output(['rfaclt', "data_aniso_culled.lat", self.name+"_llm_sym_aniso_culled.lat"])
+        R = R[3:10]
+        print("R factor of current LLM model = {}".format(R))
+        R = float(R)
 
-        return
+        CC = subprocess.check_output(['corrlt', "data_aniso_culled.lat", self.name+"_llm_sym_aniso_culled.lat"])
+        # R = R[3:10]
+        print("CC factor of current LLM model = {}".format(CC))
+        CC = -1*float(CC)
+
+        return R
 
 
-    def build_rigid_body_translation(self, sigma):
+    def build_rigid_body_translation(self, x):
         print("Creating Rigid Body Translation (RBT) model of the diffuse scattering based on {}".format(self.name))
+
+        sigma = x
 
         import subprocess
         ### make rbt model
         subprocess.call(['rbtlt', self.lat, self.name+"_rbt.lat", self.unit_cell, str(sigma)])
         subprocess.call(['symlt', self.name+"_rbt.lat", self.name+"_rbt_sym.lat", str(lunus_sym_lib[self.laue_group])])
         subprocess.call(['anisolt', self.name+"_rbt_sym.lat", self.name+"_rbt_sym_aniso.lat", self.unit_cell])
+        subprocess.call(['cullreslt', self.name+"_rbt_sym_aniso.lat", self.name+"_rbt_sym_aniso_culled.lat", "31.2", "1.45", self.unit_cell])
 
-        return
+        R = subprocess.check_output(['rfaclt', "data_aniso_culled.lat", self.name+"_rbt_sym_aniso_culled.lat"])
+        R = R[3:10]
+        print("R factor of current RBT model = {}".format(R))
+        R = float(R)
+
+        CC = subprocess.check_output(['corrlt', "data_aniso_culled.lat", self.name+"_rbt_sym_aniso_culled.lat"])
+        # R = R[3:10]
+        print("CC factor of current RBT model = {}".format(CC))
+        CC = -1*float(CC)
+
+        return R
 
 
     def build_nma(self):
         print("NMA model invoked")
+        from prody import *
+        from pylab import *
+        cypa = parsePDB('5f66')
+        calphas = cypa.select('protein and name CA')
+        anm = ANM('cypa ANM analysis')
+        anm.buildHessian(calphas, cutoff=25, gamma=10.5)
+        print("cutoff:{}".format(anm.getCutoff()))
+        print("gamma:{}".format(anm.getGamma()))
+        anm.calcModes(10)
+        cov = anm.getCovariance().round(2)
+        import matplotlib.pyplot as plt
+
+        # print(cov)
+        plt.imshow(cov)
+        plt.show()
 
         return
+
+    def refined_llm(self):
+
+        import scipy.optimize as optimize
+        rranges = ((1, 20), (0.1, 2.0))
+        # rranges = (7.5,0.5)
+
+        # best_params = optimize.differential_evolution(self.build_llm, rranges)
+        output = optimize.brute(self.build_llm, rranges, Ns=20, full_output=True, finish=optimize.fmin_powell)
+        # best_params = optimize.minimize(self.build_llm, rranges, method='Powell')
+        # best_params = optimize.basinhopping(self.build_llm, rranges)
+        # gamma = best_params[0][0]
+        # sigma = best_params[0][1]
+        # R_factor = best_params[1]
+        # print("\nRefined gamma = {}".format(gamma))
+        # print("\nRefined sigma = {}".format(sigma))
+        # print("\nR factor for refined model = {}".format(R_factor))
+        best_params = output[0]
+        best_score  = output[1]
+        param_space = output[2]
+        param_space_scores = output[3]
+
+        print("best parameters:\n{}".format(best_params))
+        print("minimized R-factor:\n{}".format(best_score))
+        import matplotlib.pyplot as plt
+        fig = plt.figure(num=1,figsize=(15,15))
+        CS = plt.contour(param_space[0],param_space[1],param_space_scores, cmap='plasma')
+        plt.clabel(CS, inline=1, fontsize=20)
+        plt.xlabel("$\gamma$ (ang)", fontsize=20)
+        plt.ylabel("$\sigma$ (ang)", fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.title("Finding the Optimal LLM Model for 5f66: R Factor Distribution", fontsize=30)
+        plt.tight_layout()
+        plt.savefig("optimized_llm_5f66.png")
+
+
+        return
+
+
+    def refined_rbt(self):
+
+        import scipy.optimize as optimize
+        rranges = [(0.0,5.0)]
+
+        output = optimize.brute(self.build_rigid_body_translation, rranges, full_output=True, finish=optimize.fmin)
+        # best_params = optimize.differential_evolution(self.build_rigid_body_translation, rranges)
+        # best_params = optimize.minimize(self.build_rigid_body_translation, rranges, method='Powell')
+        # sigma = best_params[0]
+        # R_factor = best_params[1]
+        # print("\nRefined sigma = {}".format(sigma))
+        # print("\nR factor for refined model = {}".format(R_factor))
+        best_params = output[0]
+        best_score  = output[1]
+        param_space = output[2]
+        param_space_scores = output[3]
+
+        print("best parameters:\n{}".format(best_params))
+        print("minimized R-factor:\n{}".format(best_score))
+        # print(param_space)
+        # print(param_space_scores)
+        import matplotlib.pyplot as plt
+        fig = plt.figure(num=1,figsize=(15,15))
+        # CS = plt.contour(param_space[0],param_space[1],param_space_scores, cmap='plasma')
+        # plt.clabel(CS, inline=1, fontsize=20)
+        plt.plot(param_space,param_space_scores)
+        plt.ylabel("R factor", fontsize=20)
+        plt.xlabel("$\sigma$ (ang)", fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.title("Finding the Optimal RBT Model for 5f66: R Factor Distribution", fontsize=30)
+        plt.tight_layout()
+        plt.savefig("optimized_rbt_5f66.png")
+        print best_params
+
+        return
+
 
 
 
@@ -229,7 +350,10 @@ A.write_hkl()
 A.hkl2lat()
 # A.write_vtk()
 # A.write_lat()
-
-A.build_llm(7.5, 0.5)
-A.build_rigid_body_translation(0.5)
-# A.nma()
+# import numpy as np
+# x = np.array([7.5,0.5])
+# A.build_llm(x)
+# A.refined_llm()
+# A.build_rigid_body_translation(x)
+# A.refined_rbt()
+A.build_nma()
