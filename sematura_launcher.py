@@ -53,11 +53,11 @@ args = parser.parse_args()
 
 
 ### Variable definitions
-lunus_dir = check_output(['which', 'symlt'])
-lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
+# lunus_dir = check_output(['which', 'symlt'])
+# lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
 dials = check_output(["which", "dials.version"])
 dials_dir = dirname(dials)
-dials_dir = dials_dir.replace("bin","setpaths.sh")
+dials_setup = dials_dir.replace("bin","setpaths.sh")
 work_dir = getcwd()
 
 
@@ -98,8 +98,8 @@ if args.init:
     ### Prepare reference
     test_img = DiffuseImage(img_one)
     test_img.set_general_variables()
-    test_img.remove_bragg_peaks()
-    test_img.radial_average(reference=True)
+    test_img.remove_bragg_peaks(reference=True)
+    # test_img.radial_average(reference=True)
 
 
     # logger()
@@ -146,7 +146,7 @@ cd %s
 
 libtbx.python %s/scripts/sematura.py %s $input %s
 
-        """ % (work_dir, work_dir, num_files, tasknames, work_dir, dials_dir, lunus_dir, args.experiment_file, args.d_min))
+        """ % (work_dir, work_dir, num_files, tasknames, work_dir, dials_setup, work_dir, args.experiment_file, args.d_min))
         f.close()
 
         ### submit jobs to SGE cluster
@@ -161,7 +161,7 @@ if args.process & args.nocluster:
 if args.analysis:
     analyzer = DiffuseImage(img_one)
     analyzer.mean_lattice()
-    analyzer.array_to_vtk()
-    analyzer.average_symmetry_mates()
+    # analyzer.array_to_vtk()
+    analyzer.average_symmetry_mates(vtk=True, lat=True)
 
 
