@@ -21,19 +21,32 @@ lunus_sym_lib = {'-1': 0, '2/m': -1, 'mmm': -2, '4/m': -3, '4/mmm': -4, \
 
 class DisorderModel(object):
 
-    def __init__(self, filepath, dmin):
+    def __init__(self, filepath, dmin, dmax, mean=False, sym=False, aniso=False):
         
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1]
-        self.name = self.filename.rstrip(".pdb")
+        self.name = self.filename.replace(".pdb","")
         self.structure_factors = None
         self.hkl = None
         self.vtk = None
         self.lat = None
-        self.dmin = dmin
+        self.dmin = float(dmin)
+        self.dmax = float(dmax)
         self.unit_cell = None
         self.space_group = None
         self.laue_group = None
+        if mean:
+            self.data_lat = self.name+"_mean.lat"
+        else:
+            pass
+        if sym:
+            self.data_lat = self.name+"_mean_sym.lat"
+        else:
+            pass
+        if aniso:
+            self.data_lat = self.name+"_mean_sym_aniso.lat"
+        else:
+            pass
 
         print("building a disorder model from {}".format(self.filename))
 
@@ -142,8 +155,9 @@ class DisorderModel(object):
         import subprocess
         ### improper workaround...the hkl2lat needs a template, but this should be a data file
         ### or a blank lattice of defined dimensions
-        template = "data.lat"
-        subprocess.call(['hkl2lat', self.hkl, self.lat, template])
+        # template = "data.lat"
+        # template = self.data_lat
+        subprocess.call(['hkl2lat', self.hkl, self.lat, self.data_lat])
 
 
     def build_llm_old(self, data_in, sigma, gamma, dmin, dmax):
@@ -202,13 +216,15 @@ class DisorderModel(object):
         subprocess.call(['llmlt', self.lat, self.name+"_llm.lat", self.unit_cell, str(gamma), str(sigma)])
         subprocess.call(['symlt', self.name+"_llm.lat", self.name+"_llm_sym.lat", str(lunus_sym_lib[self.laue_group])])
         subprocess.call(['anisolt', self.name+"_llm_sym.lat", self.name+"_llm_sym_aniso.lat", self.unit_cell])
-        subprocess.call(['cullreslt', self.name+"_llm_sym_aniso.lat", self.name+"_llm_sym_aniso_culled.lat", "31.2", "1.45", self.unit_cell])
-        R = subprocess.check_output(['rfaclt', "data_aniso_culled.lat", self.name+"_llm_sym_aniso_culled.lat"])
-        R = R[3:10]
-        print("R factor of current LLM model = {}".format(R))
-        R = float(R)
+        subprocess.call(['cullreslt', self.name+"_llm_sym_aniso.lat", self.name+"_llm_sym_aniso_culled.lat", str(self.dmax), str(self.dmin), self.unit_cell])
+        subprocess.call(['cullreslt', self.data_lat, self.data_lat.replace(".lat","_culled.lat"), str(self.dmax), str(self.dmin), self.unit_cell])
+        
+        R3 = subprocess.check_output(['rfaclt', self.data_lat.replace(".lat","_culled.lat"), self.name+"_llm_sym_aniso_culled.lat"])
+        R2 = R3.split(" ")
+        print("R factor of current LLM model = {}".format(R2[-1]))
+        R = float(R2[-1])
 
-        CC = subprocess.check_output(['corrlt', "data_aniso_culled.lat", self.name+"_llm_sym_aniso_culled.lat"])
+        CC = subprocess.check_output(['corrlt', self.data_lat.replace(".lat","_culled.lat"), self.name+"_llm_sym_aniso_culled.lat"])
         # R = R[3:10]
         print("CC factor of current LLM model = {}".format(CC))
         CC = -1*float(CC)
@@ -226,14 +242,16 @@ class DisorderModel(object):
         subprocess.call(['rbtlt', self.lat, self.name+"_rbt.lat", self.unit_cell, str(sigma)])
         subprocess.call(['symlt', self.name+"_rbt.lat", self.name+"_rbt_sym.lat", str(lunus_sym_lib[self.laue_group])])
         subprocess.call(['anisolt', self.name+"_rbt_sym.lat", self.name+"_rbt_sym_aniso.lat", self.unit_cell])
-        subprocess.call(['cullreslt', self.name+"_rbt_sym_aniso.lat", self.name+"_rbt_sym_aniso_culled.lat", "31.2", "1.45", self.unit_cell])
+        subprocess.call(['cullreslt', self.name+"_rbt_sym_aniso.lat", self.name+"_rbt_sym_aniso_culled.lat", str(self.dmax), str(self.dmin), self.unit_cell])
+        subprocess.call(['cullreslt', self.data_lat, self.data_lat.replace(".lat","_culled.lat"), str(self.dmax), str(self.dmin), self.unit_cell])
 
-        R = subprocess.check_output(['rfaclt', "data_aniso_culled.lat", self.name+"_rbt_sym_aniso_culled.lat"])
-        R = R[3:10]
-        print("R factor of current RBT model = {}".format(R))
-        R = float(R)
 
-        CC = subprocess.check_output(['corrlt', "data_aniso_culled.lat", self.name+"_rbt_sym_aniso_culled.lat"])
+        R3 = subprocess.check_output(['rfaclt', self.data_lat.replace(".lat","_culled.lat"), self.name+"_rbt_sym_aniso_culled.lat"])
+        R2 = R3.split(" ")
+        print("R factor of current RBT model = {}".format(R2[-1]))
+        R = float(R2[-1])
+
+        CC = subprocess.check_output(['corrlt', self.data_lat.replace(".lat","_culled.lat"), self.name+"_rbt_sym_aniso_culled.lat"])
         # R = R[3:10]
         print("CC factor of current RBT model = {}".format(CC))
         CC = -1*float(CC)
@@ -245,7 +263,7 @@ class DisorderModel(object):
         print("NMA model invoked")
         from prody import *
         from pylab import *
-        cypa = parsePDB('5f66')
+        cypa = parsePDB(self.name)
         calphas = cypa.select('protein and name CA')
         anm = ANM('cypa ANM analysis')
         anm.buildHessian(calphas, cutoff=25, gamma=10.5)
@@ -264,7 +282,11 @@ class DisorderModel(object):
     def refined_llm(self):
 
         import scipy.optimize as optimize
-        rranges = ((1, 20), (0.1, 2.0))
+        # rranges = ((0, 20), (0.0, 2.0))
+        # rranges = ((0.0, 7.5), (0.0, 0.75))
+        rranges = ((0.0, 20.0), (0.0, 0.20))
+
+
         # rranges = (7.5,0.5)
 
         # best_params = optimize.differential_evolution(self.build_llm, rranges)
@@ -292,9 +314,9 @@ class DisorderModel(object):
         plt.ylabel("$\sigma$ (ang)", fontsize=20)
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-        plt.title("Finding the Optimal LLM Model for 5f66: R Factor Distribution", fontsize=30)
+        plt.title("Finding the Optimal LLM Model for {}: R Factor Distribution".format(self.name),  fontsize=30)
         plt.tight_layout()
-        plt.savefig("optimized_llm_5f66.png")
+        plt.savefig("optimized_llm_{}.png".format(self.name))
 
 
         return
@@ -305,7 +327,7 @@ class DisorderModel(object):
         import scipy.optimize as optimize
         rranges = [(0.0,5.0)]
 
-        output = optimize.brute(self.build_rigid_body_translation, rranges, full_output=True, finish=optimize.fmin)
+        output = optimize.brute(self.build_rigid_body_translation, rranges, Ns=50, full_output=True, finish=optimize.fmin)
         # best_params = optimize.differential_evolution(self.build_rigid_body_translation, rranges)
         # best_params = optimize.minimize(self.build_rigid_body_translation, rranges, method='Powell')
         # sigma = best_params[0]
@@ -325,24 +347,26 @@ class DisorderModel(object):
         fig = plt.figure(num=1,figsize=(15,15))
         # CS = plt.contour(param_space[0],param_space[1],param_space_scores, cmap='plasma')
         # plt.clabel(CS, inline=1, fontsize=20)
-        plt.plot(param_space,param_space_scores)
-        plt.ylabel("R factor", fontsize=20)
+        plt.scatter(param_space,param_space_scores)
+        plt.ylabel("R", fontsize=20)
         plt.xlabel("$\sigma$ (ang)", fontsize=20)
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-        plt.title("Finding the Optimal RBT Model for 5f66: R Factor Distribution", fontsize=30)
+        plt.title("Finding the Optimal RBT Model for {}: R Factor Distribution".format(self.name), fontsize=30)
         plt.tight_layout()
-        plt.savefig("optimized_rbt_5f66.png")
-        print best_params
+        plt.savefig("optimized_rbt_{}.png".format(self.name))
+        # print best_params
 
         return
 
 
+from sys import argv
 
+script, file, high_res, low_res = argv
 
 ### test the class
 
-A = DisorderModel("./5f66.pdb", 1.4)
+A = DisorderModel(file, high_res, low_res, aniso=True)
 
 
 A.calculate_structure_factors()
@@ -355,5 +379,5 @@ A.hkl2lat()
 # A.build_llm(x)
 # A.refined_llm()
 # A.build_rigid_body_translation(x)
-# A.refined_rbt()
-A.build_nma()
+A.refined_rbt()
+# A.build_nma()

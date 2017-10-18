@@ -39,8 +39,8 @@ from dxtbx.format.FormatCBFMini import FormatCBFMini
 lunus_sym_lib = {'-1': 0, '2/m': -1, 'mmm': -2, '4/m': -3, '4/mmm': -4, \
 '-3': -5, '-3m': -6, '6/m': -7, '6/mmm': -8, 'm-3': -9, 'm-3m': -10}
 
-lunus_dir = check_output(['which', 'symlt'])
-lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
+# lunus_dir = check_output(['which', 'symlt'])
+# lunus_dir = lunus_dir.replace("/c/bin/symlt\n","")
 work_dir = getcwd()
 # work_dir = check_output("pwd")
 # work_dir = work_dir.replace("\n","")
@@ -72,17 +72,17 @@ class DiffuseExperiment(object):
             read_experiments=True)
         params, options = parser.parse_args(args=[experiment_file], show_diff_phil=True)
         experiments = flatten_experiments(params.input.experiments)
-        crystal = experiments.crystals()[0]
+        exp_xtal = experiments.crystals()[0]
 
         ### define useful attributes
-        self.crystal = crystal
+        self.crystal = exp_xtal
         uc = self.crystal.get_unit_cell()
         uc_nospace = str(uc).replace(" ", "")
         uc_nospace_noparen = uc_nospace[1:-1]
         self.unit_cell = uc_nospace_noparen
         self.space_group = self.crystal.get_space_group()
         self.laue_group = self.space_group.laue_group_type()
-        self.a_matrix = crystal.get_A()
+        # self.a_matrix = crystal.get_A()
         self.experiments = experiments
 
 
@@ -115,10 +115,18 @@ class DiffuseImage(DiffuseExperiment):
     def __init__(self, filename):
 
         self.raw    = filename
-        left, right = self.raw.split(".")
-        self.lunus = left+"_lunus."+right
+        try:
+            left, right = self.raw.split(".")
+            self.lunus = left+"_lunus."+right
+        except:
+            left, middle, right = self.raw.split(".")
+            self.lunus = left+"_lunus."+middle+"."+right
         base = basename(self.raw)
-        self.id, self.filetype = base.split(".")
+        try:
+            self.id, self.filetype = base.split(".")
+        except:
+            self.id, self.filetype, self.compression = base.split(".")
+
         self.array = (work_dir+"/arrays/"+self.id+".npz")
 
         print("raw file is: {}".format(filename))
@@ -179,7 +187,7 @@ class DiffuseImage(DiffuseExperiment):
         return
 
 
-    def remove_bragg_peaks(self, write_lunus=None, reference=None):
+    def remove_bragg_peaks(self, reference=None, write_lunus=None):
 
         start_cpu = time.clock()
         start_real = time.time()
@@ -193,17 +201,18 @@ class DiffuseImage(DiffuseExperiment):
         print "Setting detection threshold"
         image.LunusThrshim(self.thrshim_min, self.thrshim_max)
         print "Removing Bragg peaks from image"
-        image.LunusModeim(self.mode_filter_footprint)
+        image.LunusModeim(self.mode_filter_footprint, 1)
         print "Mode filter finished."
         print "Correcting for beam polarization"
-        image.LunusPolarim(self.beam_center_x, self.beam_center_y, self.detector_distance, self.polarization_fraction, self.polarization_offset, self.pixel_size)
+        image.LunusPolarim(self.beam_center_mm_x, self.beam_center_mm_y, self.detector_distance, self.polarization_fraction, self.polarization_offset, self.pixel_size)
         print "Solid-angle normalization of image"
         image.LunusNormim(self.beam_center_mm_x, self.beam_center_mm_y, self.detector_distance, self.cassette_x, self.cassette_y, self.pixel_size)
         
-        data_out = image.get_image();
+        self.lunus_data_scitbx = image.get_image();
 
         self.radial_avg = image.LunusRadialAvgim(self.beam_center_mm_x, self.beam_center_mm_y, self.pixel_size)
-        self.lunus_data = data_out.as_numpy_array()
+        self.lunus_data = self.lunus_data_scitbx.as_numpy_array()
+        print("shape of lunus data at step 1: {}".format(self.lunus_data.shape))
 
 
         end_cpu = time.clock()
@@ -214,7 +223,7 @@ class DiffuseImage(DiffuseExperiment):
 
         ### write files, if desired
         if write_lunus:
-            FormatCBFMini.as_file(self.detector,self.beam,self.gonio,self.scan,data_out,self.lunus)
+            FormatCBFMini.as_file(self.detector,self.beam,self.gonio,self.scan,self.lunus_data_scitbx,self.lunus)
         else:
             pass
 
@@ -226,6 +235,18 @@ class DiffuseImage(DiffuseExperiment):
         return
 
 
+    def radial_average(self, reference=None):
+        image = LunusDIFFIMAGE()
+        working_img = self.lunus_data_scitbx.reshape(flex.grid(self.Isizey, self.Isizex))
+        image.set_image(working_img)
+        self.radial_avg = image.LunusRadialAvgim(self.beam_center_mm_x, self.beam_center_mm_y, self.pixel_size)
+
+        if reference:
+            np.savez("reference_radial_average", rad=self.radial_avg)
+        else:
+            pass
+        
+        return
     # def radial_average(self, reference=None):
 
     #     y, x = np.indices((self.lunus_data.shape))
@@ -316,6 +337,7 @@ class DiffuseImage(DiffuseExperiment):
         Amat = np.asmatrix(a_mat)
         from numpy.linalg import inv
         a_inv = inv(Amat)
+        # a_inv = a = np.array([[42.7267962919, -4.43572592458, -2.81263484758],[-6.13535435886, -50.434871775, -13.6629067462],[-3.20694000173, 23.7226323386, -86.1289788991]])
 
         ### calculate h,k,l for every data point
         print "Calculating h,k,l for each data point from image"
@@ -326,12 +348,20 @@ class DiffuseImage(DiffuseExperiment):
               " data points ("+tel+" seconds)"
 
         ### fetch data from Lunus processed image using Dials methods
-        val = np.array(self.lunus_data, dtype=int)
+        val = np.array(self.lunus_data_scitbx, dtype=int)
+        print("shape of lunus data at step 2: {}".format(val.shape))
+
 
         ### rearrange order of data points to match h,k,l matrix (H)
         val.shape = (self.Isizey,self.Isizex)
+        print("shape of lunus data at step 3: {}".format(val.shape))
+
         val = np.transpose(val)
+        print("shape of lunus data at step 4: {}".format(val.shape))
+
         val = val.flatten()
+        print("shape of lunus data at step 5: {}".format(val.shape))
+
 
         ### isolate all h's, k's, and l's
         i = H[:,0]
@@ -463,6 +493,7 @@ class DiffuseImage(DiffuseExperiment):
                 print >>vtkfile,""
 
         vtkfile.close()
+        self.vtk = out_file
         return
 
 
@@ -482,7 +513,7 @@ class DiffuseImage(DiffuseExperiment):
             data.close()
         sum_int_masked = np.ma.array(sum_int,mask=sum_ct==0)
         sum_ct_masked = np.ma.array(sum_ct,mask=sum_ct==0)
-        mean_lt = np.divide(sum_int_masked,sum_ct_masked)
+        mean_lt = np.ma.divide(sum_int_masked,sum_ct_masked)
         mean_lt.set_fill_value(-32768)
         self.mean_lattice = mean_lt.filled()
         out = (work_dir+"/arrays/"+self.id+"_mean.npz")
@@ -502,11 +533,16 @@ class DiffuseImage(DiffuseExperiment):
         aniso_vtk_file  = (work_dir+"/lattices/"+self.id+"_mean_sym_aniso.vtk")
 
         lat = LunusLAT3D()
-        working_lattice = flex.int(self.mean_lattice)
-        lat.set_lattice(working_lattice)
+        ### numpy arrays read into flex arrays don't store data properly
+        # working_lattice = flex.int([np.int(i) for i in self.mean_lattice.flatten()])
+        # working_lattice.reshape(flex.grid(self.latzdim,self.latydim,self.latxdim))
+        lat.LunusReadvtk(self.vtk)
+        # lat.set_lattice(working_lattice)
         if lat:
-            lat.LunusWritelt(mean_lat_file) 
-        elif vtk:
+            lat.LunusWritelt(mean_lat_file)
+        else:
+            pass 
+        if vtk:
             lat.LunusWritevtk(mean_vtk_file)
         else:
             pass
@@ -515,7 +551,9 @@ class DiffuseImage(DiffuseExperiment):
         lat.LunusSymlt(lunus_sym_lib[self.laue_group])
         if lat:
             lat.LunusWritelt(sym_lat_file) 
-        elif vtk:
+        else:
+            pass
+        if vtk:
             lat.LunusWritevtk(sym_vtk_file)
         else:
             pass
@@ -523,8 +561,10 @@ class DiffuseImage(DiffuseExperiment):
         print 'Isolating the anisotropic signal'
         lat.LunusAnisolt(self.cella, self.cellb, self.cellc, self.alpha, self.beta, self.gamma)
         if lat:
-            lat.LunusWritelt(aniso_lat_file) 
-        elif vtk:
+            lat.LunusWritelt(aniso_lat_file)
+        else:
+            pass
+        if vtk:
             lat.LunusWritevtk(aniso_vtk_file)
         else:
             pass
@@ -642,9 +682,9 @@ def main():
 
     test_img = DiffuseImage(img_file)
     test_img.set_general_variables()
-    # test_img.remove_bragg_peaks(reference=True)
     test_img.remove_bragg_peaks()
-    # test_img.radial_average(reference=True)
+    # test_img.remove_bragg_peaks()
+    #test_img.radial_average()
     # test_img.radial_average()
     test_img.scale_factor()
     test_img.crystal_geometry(test_exp.crystal)

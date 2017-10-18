@@ -81,9 +81,9 @@ if not any([item for item in [args.init, args.process, args.analysis]]):
 
 
 
-test_exp = DiffuseExperiment()
-test_exp.read_experiment_file(args.experiment_file)
-img_set = test_exp.experiments.imagesets()
+prep = DiffuseExperiment()
+prep.read_experiment_file(args.experiment_file)
+img_set = prep.experiments.imagesets()
 imgs = img_set[0]
 file_list = imgs.paths()
 img_one =  file_list[0]
@@ -96,10 +96,10 @@ for item in file_list:
 ### Initialize & prepare for data analysis
 if args.init:
     ### Prepare reference
-    test_img = DiffuseImage(img_one)
-    test_img.set_general_variables()
-    test_img.remove_bragg_peaks(reference=True)
-    # test_img.radial_average(reference=True)
+    initializer = DiffuseImage(img_one)
+    initializer.set_general_variables()
+    initializer.remove_bragg_peaks(reference=True)
+    #initializer.radial_average(reference=True)
 
 
     # logger()
@@ -125,8 +125,8 @@ if args.process:
         f = open("run_sematura.sh", "w")
         f.write("""
 #$ -S /bin/bash
-#$ -o %s/out/$SGE_TASK_ID
-#$ -e %s/err/$SGE_TASK_ID
+#$ -o %s/out
+#$ -e %s/err
 #$ -cwd
 #$ -r y
 #$ -j y
@@ -155,13 +155,18 @@ libtbx.python %s/scripts/sematura.py %s $input %s
 ### Alternative processing for use without cluster environment
 if args.process & args.nocluster:
     for item in file_list:
-        call(['libtbx.python', lunus_dir+'/scripts/sematura.py', args.experiment_file, item, args.d_min])
+        call(['libtbx.python', work_dir+'/scripts/sematura.py', args.experiment_file, item, args.d_min])
 
 ### Analyze diffuse lattices and expand to P1 symmetry
 if args.analysis:
+    end = DiffuseExperiment()
+    end.read_experiment_file(args.experiment_file)
     analyzer = DiffuseImage(img_one)
+    analyzer.set_general_variables()
+    analyzer.crystal_geometry(end.crystal)
+    analyzer.setup_diffuse_lattice(float(args.d_min))
     analyzer.mean_lattice()
-    # analyzer.array_to_vtk()
+    analyzer.array_to_vtk()
     analyzer.average_symmetry_mates(vtk=True, lat=True)
 
 
