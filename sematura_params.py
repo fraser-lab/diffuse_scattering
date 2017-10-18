@@ -19,8 +19,8 @@ target_cell =   (str(cella)+" "+str(cellb)+" "+str(cellc)+" "
 diffuse_lattice_prefix  =   'cypa_sema_corrcomp'
 image_prefix            =   'set_1_1_'
 lunus_image_prefix      =   'set_1_1_lunus_'
-image_dir               =   '/netapp/home/awolff/cypa_vanben/cbf'
-phenix_dir              =   '/netapp/home/awolff/packages/phenix-dev-2499'
+image_dir               =   '/Users/student/diffuse_working'
+phenix_dir              =   '/usr/local/phenix-dev-2499'
 
 ###-----------Choose files to use for indexing-----------###
 indexing_one   = str(1)            # number of first file for indexing
@@ -31,28 +31,28 @@ indexing_three = str(90)            # number of third file for indexing
 
 ###----------------Lunus input parameters----------------###
 ### image borders
-windim_xmax     =str(2363)          # right border for processed image (pixels)
-windim_xmin     =str(10)           # left border for processed image (pixels)
-windim_ymax     =str(2427)          # top border for processed image (pixels)
-windim_ymin     =str(100)           # bottom border for processed image (pixels)
+windim_xmax     =2363          # right border for processed image (pixels)
+windim_xmin     =10           # left border for processed image (pixels)
+windim_ymax     =2427          # top border for processed image (pixels)
+windim_ymin     =100           # bottom border for processed image (pixels)
 ### beamstop borders
-punchim_xmax    =str(2459)          # right border of beam stop shadow (pixels)
-punchim_xmin    =str(1156)          # left border of beam stop shadow (pixels)
-punchim_ymax    =str(1363)          # top border of beam stop shadow (pixels)
-punchim_ymin    =str(1224)          # bottom border of beam stop shadow (pixels)
+punchim_xmax    =2459          # right border of beam stop shadow (pixels)
+punchim_xmin    =1156          # left border of beam stop shadow (pixels)
+punchim_ymax    =1363          # top border of beam stop shadow (pixels)
+punchim_ymin    =1224          # bottom border of beam stop shadow (pixels)
 ### intensity thresholds
-thrshim_max     =str(10000)         # maximum reliable intensity for detector (count)
-thrshim_min     =str(1)             # minimum intensity for diffuse analysis (count)
+thrshim_max     =10000         # maximum reliable intensity for detector (count)
+thrshim_min     =1             # minimum intensity for diffuse analysis (count)
 ### binning to remove Bragg peaks
-modeim_bin_size     =str(1)         # mask bin for mode filtering (count)
-modeim_kernel_width =str(20)        # mask width for mode filtering (pixels)
+modeim_bin_size     =1        # mask bin for mode filtering (count)
+modeim_kernel_width =20        # mask width for mode filtering (pixels)
 ### beam polarization correction
-polarim_dist        =str(182.87)       # distance from sample to detector (mm)
-polarim_offset      =str(0.0)       # ask Mike W.
-polarim_polarization=str(0.8)      # polarization fraction (0.0-1.0) 
+polarim_dist        =182.87       # distance from sample to detector (mm)
+polarim_offset      =0.0       # ask Mike W.
+polarim_polarization=0.8      # polarization fraction (0.0-1.0) 
 ### solid-angle image normalization
-normim_tilt_x       =str(0.0)       # ask Mike W.
-normim_tilt_y       =str(0.0)       # ask Mike W.
+normim_tilt_x       =0.0       # ask Mike W.
+normim_tilt_y       =0.0       # ask Mike W.
 ### image scaling
 reference_image_number =str(1)      # reference for scaling
 scale_inner_radius     =99         # ask Mike W.

@@ -1,0 +1,7 @@
+*.pyc
+.DS_Store
+*.png
+*.vtk
+/build
+.ipynb_checkpoints
+*.ipynb
