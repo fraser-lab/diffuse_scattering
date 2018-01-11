@@ -1,0 +1,28 @@
+
+#significance_filter.enable=True
+
+# you can use 14 cores in the serial queue
+mp.nproc = 1
+mp.method=multiprocessing
+
+# get more info
+verbosity = 3
+
+indexing {
+    known_symmetry {
+        space_group = P 21 21 21
+        unit_cell = 42.9, 52.4, 89.1, 90, 90, 90
+    }
+
+    # sometimes real_space_grid_search works better
+    # method = real_space_grid_search
+
+    # needs to be sufficiently high
+    refinement_protocol.d_min_start = 2.0
+
+    # dramatically increases accepted spots in real_space_grid_search
+    # index_assignment.method = local
+    # optimise_initial_basis_vectors = True
+}
+
+
