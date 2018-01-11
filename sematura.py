@@ -191,7 +191,6 @@ class DiffuseImage(DiffuseExperiment):
 
         start_cpu = time.clock()
         start_real = time.time()
-
         image = LunusDIFFIMAGE()
         image.set_image(self.raw_data)
         print 'Removing beamstop shadow from image'
@@ -201,7 +200,7 @@ class DiffuseImage(DiffuseExperiment):
         print "Setting detection threshold"
         image.LunusThrshim(self.thrshim_min, self.thrshim_max)
         print "Removing Bragg peaks from image"
-        image.LunusModeim(self.mode_filter_footprint, 1)
+        image.LunusModeim(self.mode_filter_footprint)
         print "Mode filter finished."
         print "Correcting for beam polarization"
         image.LunusPolarim(self.beam_center_mm_x, self.beam_center_mm_y, self.detector_distance, self.polarization_fraction, self.polarization_offset, self.pixel_size)
@@ -669,23 +668,19 @@ def index_from_files(f_one,f_two,f_three):
 ###----------------Direct call of script-------------------###
 
 def main():
-    script, exp_file, img_file, d_min = argv
+    exp_file, d_min = argv[1:]
 
     test_exp = DiffuseExperiment()
     test_exp.read_experiment_file(exp_file)
 
-    # img_set = test_exp.experiments.imagesets()
-    # imgs = img_set[0]
-    # file_list = imgs.paths()
-    # filenum = int(filenum)
-    # img_file =  file_list[filenum]
+    img_set = test_exp.experiments.imagesets()
+    imgs = img_set[0]
+    file_list = imgs.paths()
+    img_file = file_list[0]
 
     test_img = DiffuseImage(img_file)
     test_img.set_general_variables()
-    test_img.remove_bragg_peaks()
-    # test_img.remove_bragg_peaks()
-    #test_img.radial_average()
-    # test_img.radial_average()
+    test_img.remove_bragg_peaks(reference=True)
     test_img.scale_factor()
     test_img.crystal_geometry(test_exp.crystal)
     d_min = float(d_min)
