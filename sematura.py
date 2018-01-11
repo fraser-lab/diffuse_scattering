@@ -128,6 +128,7 @@ class DiffuseImage(DiffuseExperiment):
             self.id, self.filetype, self.compression = base.split(".")
 
         self.array = (work_dir+"/arrays/"+self.id+".npz")
+	self.radial_name = (work_dir+"/arrays/"+self.id+"_radial.npz")
 
         print("raw file is: {}".format(filename))
         print("lunus processed file is: {}".format(self.lunus))
@@ -226,8 +227,8 @@ class DiffuseImage(DiffuseExperiment):
         else:
             pass
 
-        if reference:
-            np.savez("reference_radial_average", rad=self.radial_avg)
+        if radial:
+            np.savez(self.radial_name, rad=self.radial_avg)
         else:
             pass
 
