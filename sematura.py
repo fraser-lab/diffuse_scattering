@@ -188,7 +188,7 @@ class DiffuseImage(DiffuseExperiment):
         return
 
 
-    def remove_bragg_peaks(self, reference=None, write_lunus=None):
+    def remove_bragg_peaks(self, radial=None, write_lunus=None):
 
         start_cpu = time.clock()
         start_real = time.time()
@@ -271,7 +271,7 @@ class DiffuseImage(DiffuseExperiment):
 
     def scale_factor(self):
 
-        ref = np.load("reference_radial_average.npz")
+        ref = np.load(self.radial_name)
         ref_rad = ref["rad"]
         xx = np.average(np.multiply(ref_rad[100:800],ref_rad[100:800]))
         xy = np.average(np.multiply(ref_rad[100:800],self.radial_avg[100:800]))
@@ -681,7 +681,7 @@ def main():
 
     test_img = DiffuseImage(img_file)
     test_img.set_general_variables()
-    test_img.remove_bragg_peaks(reference=True)
+    test_img.remove_bragg_peaks(radial=True)
     test_img.scale_factor()
     test_img.crystal_geometry(test_exp.crystal)
     d_min = float(d_min)
