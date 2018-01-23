@@ -113,6 +113,9 @@ class DiffuseExperiment(object):
 class DiffuseImage(DiffuseExperiment):
 
     def __init__(self, filename):
+        self.set_paths(filename)
+
+    def set_paths(self,filename):
 
         self.raw    = filename
         try:
@@ -135,7 +138,6 @@ class DiffuseImage(DiffuseExperiment):
         print(self.id)
         print(self.filetype)
         print(self.array)
-
 
     def set_general_variables(self):
 
@@ -268,6 +270,20 @@ class DiffuseImage(DiffuseExperiment):
 
     #     return
 
+
+    def scale_factor_from_images(self,ref_data):
+        image = LunusDIFFIMAGE()
+#        ref_img = ref_data.reshape(flex.grid(self.Isizey, self.Isizex))
+        image.set_image(ref_data)
+        image.set_reference()
+#        working_img = self.lunus_data_scitbx.reshape(flex.grid(self.Isizey, self.Isizex))
+        working_img = self.lunus_data_scitbx
+        image.set_image(working_img)
+        scale_info = image.LunusScaleim(self.beam_center_mm_x, self.beam_center_mm_y,self.pixel_size,100,800)
+        self.scale_factor = scale_info[0]
+        print "Image ",self.raw," has a scale factor of "+str(self.scale_factor)
+
+        return
 
     def scale_factor(self):
 
