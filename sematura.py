@@ -466,9 +466,9 @@ class DiffuseImage(DiffuseExperiment):
 
         tel = time.clock()-t0
         print("Integrating diffuse scattering took {} sec".format(tel))
-        lt = np.add(self.lt,latit[0])
-        ct = np.add(self.ct,latit[1])
-        np.savez(self.array, lt=lt, ct=ct)
+        self.lt = np.add(self.lt,latit[0])
+        self.ct = np.add(self.ct,latit[1])
+        np.savez(self.array, lt=self.lt, ct=self.ct)
 
         return
 
